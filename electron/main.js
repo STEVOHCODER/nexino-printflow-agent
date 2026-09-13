@@ -5,7 +5,7 @@ const Store = require('electron-store');
 
 const store = new Store({
   defaults: {
-    backendUrl: 'https://nexino-printflow-api.vercel.app',
+    backendUrl: 'https://backend-mauve-delta-32.vercel.app',
     agentId: 'AGENT-001',
     agentSecret: 'nexino-printflow-agent-secret-2026',
     stations: [],
