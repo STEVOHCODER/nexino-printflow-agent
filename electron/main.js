@@ -3,6 +3,11 @@ const path = require('path');
 const { spawn } = require('child_process');
 const Store = require('electron-store');
 
+const isProd = app.isPackaged;
+const agentRoot = isProd
+  ? path.join(process.resourcesPath)
+  : path.join(__dirname, '..');
+
 const store = new Store({
   defaults: {
     backendUrl: 'https://backend-mauve-delta-32.vercel.app',
@@ -62,9 +67,9 @@ ipcMain.handle('save-config', (event, config) => {
 ipcMain.handle('detect-printers', async () => {
   return new Promise((resolve) => {
     const python = spawn('python', ['-m', 'nexino_agent', 'detect'], {
-      cwd: path.join(__dirname, '..'),
+      cwd: agentRoot,
       shell: true,
-      env: { ...process.env, PYTHONPATH: path.join(__dirname, '..') }
+      env: { ...process.env, PYTHONPATH: agentRoot }
     });
 
     let output = '';
@@ -92,16 +97,15 @@ ipcMain.handle('register-stations', async (event, { agentId, backendUrl, agentSe
     ];
 
     const python = spawn('python', args, {
-      cwd: path.join(__dirname, '..'),
+      cwd: agentRoot,
       shell: true,
-      env: { ...process.env, PYTHONPATH: path.join(__dirname, '..') }
+      env: { ...process.env, PYTHONPATH: agentRoot }
     });
 
     let output = '';
     python.stdout.on('data', (data) => { output += data.toString(); });
     python.stderr.on('data', (data) => { output += data.toString(); });
     python.on('close', (code) => {
-      // Parse JSON_RESULT from output
       try {
         const lines = output.split('\n');
         for (const line of lines) {
@@ -137,9 +141,9 @@ ipcMain.handle('start-agent', async (event, { stationId, agentId, backendUrl }) 
   }
 
   agentProcess = spawn('python', args, {
-    cwd: path.join(__dirname, '..'),
+    cwd: agentRoot,
     shell: true,
-    env: { ...process.env, PYTHONPATH: path.join(__dirname, '..') }
+    env: { ...process.env, PYTHONPATH: agentRoot }
   });
 
   agentProcess.stdout.on('data', (data) => {
