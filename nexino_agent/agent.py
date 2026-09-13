@@ -310,7 +310,8 @@ class NexinoAgent:
         file_path = download_dir / f"{job.job_id}.pdf"
 
         logger.info(f"Downloading file for job {job.job_id}...")
-        self.api_client.download_file(job.file_url, str(file_path))
+        download_url = f"{self.config.backend_url}/api/agent/download/{job.job_id}"
+        self.api_client.download_file(download_url, str(file_path))
         job.local_file_path = str(file_path)
 
         self.api_client.update_job_status(job.job_id, JobStatus.PRINTING)
