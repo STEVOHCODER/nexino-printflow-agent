@@ -9,6 +9,7 @@ import time
 import signal
 import logging
 import hashlib
+import tempfile
 import threading
 from pathlib import Path
 from typing import Optional, Set
@@ -305,7 +306,7 @@ class NexinoAgent:
 
         self.api_client.update_job_status(job.job_id, JobStatus.PRINTING)
 
-        download_dir = Path(self.config.output_directory or ".") / "downloads"
+        download_dir = Path(self.config.output_directory or tempfile.gettempdir()) / "nexino-downloads"
         download_dir.mkdir(parents=True, exist_ok=True)
         file_path = download_dir / f"{job.job_id}.pdf"
 
