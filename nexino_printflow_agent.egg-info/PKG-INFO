@@ -1,0 +1,44 @@
+Metadata-Version: 2.4
+Name: nexino-printflow-agent
+Version: 1.0.0
+Summary: Print agent for Nexino PrintFlow - manages authorized print jobs
+Home-page: https://github.com/nexino/printflow-agent
+Author: Nexino PrintFlow
+Author-email: support@nexino.com
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: End Users/Desktop
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: Microsoft :: Windows
+Classifier: Operating System :: POSIX :: Linux
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Topic :: System :: Printing
+Classifier: Typing :: Typed
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+Requires-Dist: requests>=2.31.0
+Requires-Dist: websocket-client>=1.6.0
+Requires-Dist: python-dotenv>=1.0.0
+Requires-Dist: watchdog>=3.0.0
+Requires-Dist: psutil>=5.9.0
+Requires-Dist: Pillow>=10.0.0
+Provides-Extra: windows
+Requires-Dist: pywin32>=306; extra == "windows"
+Provides-Extra: dev
+Requires-Dist: pytest>=7.0.0; extra == "dev"
+Requires-Dist: pytest-cov>=4.0.0; extra == "dev"
+Requires-Dist: flake8>=6.0.0; extra == "dev"
+Requires-Dist: mypy>=1.0.0; extra == "dev"
+Dynamic: author
+Dynamic: author-email
+Dynamic: classifier
+Dynamic: description-content-type
+Dynamic: home-page
+Dynamic: provides-extra
+Dynamic: requires-dist
+Dynamic: requires-python
+Dynamic: summary

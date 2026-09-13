@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nexino Print Agent</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; }
+    .container { max-width: 800px; margin: 0 auto; padding: 40px 20px; }
+    .header { text-align: center; margin-bottom: 40px; }
+    .header h1 { font-size: 28px; font-weight: 700; color: white; }
+    .header p { color: #94a3b8; margin-top: 8px; }
+    .card { background: #1e293b; border-radius: 12px; border: 1px solid #334155; padding: 24px; margin-bottom: 20px; }
+    .card-title { font-size: 16px; font-weight: 600; margin-bottom: 16px; }
+    .form-group { margin-bottom: 16px; }
+    .form-label { display: block; font-size: 13px; font-weight: 500; color: #94a3b8; margin-bottom: 6px; }
+    .form-input { width: 100%; padding: 10px 14px; background: #0f172a; border: 1px solid #334155; border-radius: 8px; font-size: 14px; color: white; }
+    .form-input:focus { outline: none; border-color: #3b82f6; }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .btn { padding: 10px 20px; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer; border: none; display: inline-flex; align-items: center; gap: 8px; }
+    .btn-primary { background: #3b82f6; color: white; }
+    .btn-success { background: #22c55e; color: white; }
+    .btn-danger { background: #ef4444; color: white; }
+    .btn-outline { background: transparent; border: 1px solid #334155; color: #94a3b8; }
+    .btn-group { display: flex; gap: 12px; margin-top: 20px; }
+    .printer-item { display: flex; align-items: center; justify-content: space-between; padding: 14px; background: #0f172a; border-radius: 8px; border: 1px solid #334155; margin-bottom: 10px; }
+    .printer-info { display: flex; align-items: center; gap: 12px; }
+    .printer-icon { width: 36px; height: 36px; background: #1e3a5f; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #3b82f6; }
+    .printer-name { font-weight: 500; }
+    .printer-detail { font-size: 12px; color: #64748b; }
+    .badge { display: inline-flex; padding: 4px 10px; border-radius: 9999px; font-size: 11px; font-weight: 500; }
+    .badge-success { background: #052e16; color: #4ade80; }
+    .badge-info { background: #0c4a6e; color: #38bdf8; }
+    .badge-error { background: #450a0a; color: #f87171; }
+    .status-bar { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; background: #1e293b; border-radius: 8px; margin-bottom: 20px; }
+    .status-left { display: flex; align-items: center; gap: 12px; }
+    .status-dot { width: 10px; height: 10px; border-radius: 50%; background: #ef4444; }
+    .status-dot.online { background: #22c55e; box-shadow: 0 0 8px #22c55e; }
+    .log-box { background: #0f172a; border-radius: 8px; padding: 16px; height: 200px; overflow-y: auto; font-family: monospace; font-size: 12px; line-height: 1.8; border: 1px solid #334155; }
+    .log-line { color: #64748b; }
+    .log-line.info { color: #38bdf8; }
+    .log-line.success { color: #4ade80; }
+    .log-line.error { color: #f87171; }
+    .station-item { display: flex; align-items: center; justify-content: space-between; padding: 14px; background: #0f172a; border-radius: 8px; border: 1px solid #334155; margin-bottom: 10px; }
+    .station-name { font-weight: 500; }
+    .station-id { font-size: 11px; color: #64748b; font-family: monospace; }
+    .empty { text-align: center; padding: 32px; color: #64748b; }
+    .tabs { display: flex; gap: 4px; margin-bottom: 24px; background: #1e293b; padding: 4px; border-radius: 10px; }
+    .tab { flex: 1; padding: 10px; text-align: center; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 500; color: #94a3b8; }
+    .tab:hover { color: white; }
+    .tab.active { background: #3b82f6; color: white; }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+    .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; }
+    .stat-card { background: #0f172a; border-radius: 8px; padding: 16px; border: 1px solid #334155; text-align: center; }
+    .stat-value { font-size: 24px; font-weight: 700; color: white; }
+    .stat-label { font-size: 12px; color: #64748b; margin-top: 4px; }
+    .job-row { display: flex; align-items: center; justify-content: space-between; padding: 12px; background: #0f172a; border-radius: 8px; border: 1px solid #334155; margin-bottom: 8px; font-size: 13px; }
+    .job-id { font-family: monospace; color: #38bdf8; }
+    .job-station { color: #94a3b8; }
+    .printer-status-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>Nexino Print Agent</h1>
+      <p>Manage your print station from this control panel</p>
+    </div>
+    <div class="status-bar">
+      <div class="status-left">
+        <div class="status-dot" id="statusDot"></div>
+        <span id="statusText">Agent Offline</span>
+      </div>
+      <div>
+        <button class="btn btn-success" id="btnStart" onclick="startAgent()">Start Agent</button>
+        <button class="btn btn-danger" id="btnStop" onclick="stopAgent()" style="display:none;">Stop Agent</button>
+      </div>
+    </div>
+    <div class="tabs">
+      <div class="tab active" onclick="showTab('dashboard', this)">Dashboard</div>
+      <div class="tab" onclick="showTab('settings', this)">Settings</div>
+      <div class="tab" onclick="showTab('printers', this)">Printers</div>
+      <div class="tab" onclick="showTab('stations', this)">Stations</div>
+      <div class="tab" onclick="showTab('logs', this)">Logs</div>
+    </div>
+    <div class="tab-content active" id="tab-dashboard">
+      <div class="card">
+        <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;">
+          Agent Dashboard
+          <button class="btn btn-outline" onclick="loadDashboard()">Refresh</button>
+        </div>
+        <div id="dashStats" class="stats-grid">
+          <div class="stat-card"><div class="stat-value" id="dashTotalJobs">-</div><div class="stat-label">Total Jobs</div></div>
+          <div class="stat-card"><div class="stat-value" id="dashCompletedJobs">-</div><div class="stat-label">Completed</div></div>
+          <div class="stat-card"><div class="stat-value" id="dashFailedJobs">-</div><div class="stat-label">Failed</div></div>
+          <div class="stat-card"><div class="stat-value" id="dashRevenue">-</div><div class="stat-label">Revenue</div></div>
+          <div class="stat-card"><div class="stat-value" id="dashStations">-</div><div class="stat-label">Stations</div></div>
+          <div class="stat-card"><div class="stat-value" id="dashPrinters">-</div><div class="stat-label">Printers</div></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">Printer Status</div>
+        <div id="dashPrinterStatus" class="printer-status-grid"><div class="empty">Loading...</div></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Recent Jobs</div>
+        <div id="dashRecentJobs"><div class="empty">Loading...</div></div>
+      </div>
+    </div>
+    <div class="tab-content active" id="tab-settings">
+      <div class="card">
+        <div class="card-title">Connection Settings</div>
+        <div class="form-group">
+          <label class="form-label">Backend URL</label>
+          <input type="text" class="form-input" id="inputBackendUrl" value="http://localhost:3000">
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Agent ID</label>
+            <input type="text" class="form-input" id="inputAgentId" placeholder="e.g., LIBRARY-PC-001">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Agent Secret</label>
+            <input type="password" class="form-input" id="inputAgentSecret" value="change-me-agent-secret">
+          </div>
+        </div>
+        <div class="btn-group">
+          <button class="btn btn-primary" onclick="saveSettings()">Save Settings</button>
+          <button class="btn btn-outline" onclick="testConnection()">Test Connection</button>
+        </div>
+      </div>
+    </div>
+    <div class="tab-content" id="tab-printers">
+      <div class="card">
+        <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;">
+          Detected Printers
+          <button class="btn btn-outline" onclick="detectPrinters()">Refresh</button>
+        </div>
+        <div id="printerList"><div class="empty">Click Refresh to detect printers</div></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Register as Stations</div>
+        <p style="color:#94a3b8;font-size:14px;margin-bottom:16px;">Create a station for each printer on the server.</p>
+        <button class="btn btn-primary" onclick="registerStations()">Register All Printers</button>
+        <div id="registerResult" style="margin-top:16px;"></div>
+      </div>
+    </div>
+    <div class="tab-content" id="tab-stations">
+      <div class="card">
+        <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;">
+          Registered Stations
+          <button class="btn btn-outline" onclick="loadStations()">Refresh</button>
+        </div>
+        <div id="stationList"><div class="empty">No stations registered</div></div>
+      </div>
+    </div>
+    <div class="tab-content" id="tab-logs">
+      <div class="card">
+        <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;">
+          Agent Logs
+          <button class="btn btn-outline" onclick="clearLogs()">Clear</button>
+        </div>
+        <div class="log-box" id="logBox">
+          <div class="log-line info">[System] Print Agent control panel ready</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script>
+    function showTab(tab, el) {
+      document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.getElementById('tab-' + tab).classList.add('active');
+      el.classList.add('active');
+    }
+    function addLog(msg, type) {
+      const box = document.getElementById('logBox');
+      const line = document.createElement('div');
+      line.className = 'log-line ' + (type || '');
+      line.textContent = '[' + new Date().toLocaleTimeString() + '] ' + msg;
+      box.appendChild(line);
+      box.scrollTop = box.scrollHeight;
+    }
+    function clearLogs() { document.getElementById('logBox').innerHTML = ''; }
+    function saveSettings() {
+      const cfg = {
+        backendUrl: document.getElementById('inputBackendUrl').value,
+        agentId: document.getElementById('inputAgentId').value,
+        agentSecret: document.getElementById('inputAgentSecret').value,
+      };
+      fetch('/api/config', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(cfg) });
+      addLog('Settings saved', 'success');
+    }
+    async function testConnection() {
+      const url = document.getElementById('inputBackendUrl').value;
+      addLog('Testing connection...', 'info');
+      try {
+        const res = await fetch(url + '/api/health');
+        const data = await res.json();
+        addLog(data.success ? 'Connected!' : 'Failed', data.success ? 'success' : 'error');
+      } catch (e) { addLog('Failed: ' + e.message, 'error'); }
+    }
+    async function detectPrinters() {
+      addLog('Detecting printers...', 'info');
+      const res = await fetch('/api/detect');
+      const data = await res.json();
+      const list = document.getElementById('printerList');
+      if (data.printers && data.printers.length > 0) {
+        list.innerHTML = data.printers.map(p => '<div class="printer-item"><div class="printer-info"><div class="printer-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg></div><div><div class="printer-name">' + p.name + '</div><div class="printer-detail">' + (p.driver||'Unknown') + '</div></div></div><span class="badge badge-info">' + (p.adapterType||'WINDOWS') + '</span></div>').join('');
+        addLog('Found ' + data.printers.length + ' printer(s)', 'success');
+      } else {
+        list.innerHTML = '<div class="empty">No printers detected</div>';
+        addLog('No printers found', 'error');
+      }
+    }
+    async function registerStations() {
+      const agentId = document.getElementById('inputAgentId').value;
+      if (!agentId) { addLog('Set Agent ID first', 'error'); return; }
+      addLog('Registering...', 'info');
+      const res = await fetch('/api/register', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({agentId}) });
+      const data = await res.json();
+      if (data.success) {
+        document.getElementById('registerResult').innerHTML = '<span class="badge badge-success">Registered ' + data.stations.length + ' station(s)</span>';
+        addLog('Registered ' + data.stations.length + ' station(s)', 'success');
+      } else {
+        document.getElementById('registerResult').innerHTML = '<span class="badge badge-error">Failed</span>';
+        addLog('Failed: ' + data.error, 'error');
+      }
+    }
+    async function loadStations() {
+      const res = await fetch('/api/stations');
+      const data = await res.json();
+      const list = document.getElementById('stationList');
+      if (data.stations && data.stations.length > 0) {
+        list.innerHTML = data.stations.map(s => '<div class="station-item"><div><div class="station-name">' + s.name + '</div><div class="station-id">' + s.stationId + '</div></div><span class="badge badge-success">Active</span></div>').join('');
+      } else {
+        list.innerHTML = '<div class="empty">No stations</div>';
+      }
+    }
+    async function startAgent() {
+      saveSettings();
+      addLog('Starting agent...', 'info');
+      const res = await fetch('/api/start', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        updateStatus(true);
+        addLog('Agent started (PID: ' + data.pid + ')', 'success');
+      } else {
+        addLog('Failed: ' + data.error, 'error');
+      }
+    }
+    async function stopAgent() {
+      await fetch('/api/stop', { method: 'POST' });
+      updateStatus(false);
+      addLog('Agent stopped', 'info');
+    }
+    async function checkStatus() {
+      try {
+        const res = await fetch('/api/status');
+        const data = await res.json();
+        updateStatus(data.running);
+      } catch {}
+    }
+    function updateStatus(running) {
+      document.getElementById('statusDot').classList.toggle('online', running);
+      document.getElementById('statusText').textContent = running ? 'Agent Running' : 'Agent Offline';
+      document.getElementById('btnStart').style.display = running ? 'none' : 'inline-flex';
+      document.getElementById('btnStop').style.display = running ? 'inline-flex' : 'none';
+    }
+    async function loadDashboard() {
+      const backendUrl = document.getElementById('inputBackendUrl').value;
+      const agentId = document.getElementById('inputAgentId').value;
+      const agentSecret = document.getElementById('inputAgentSecret').value;
+      if (!agentId || !agentSecret) { addLog('Set Agent ID and Secret first', 'error'); return; }
+      try {
+        const res = await fetch(backendUrl + '/api/agent/dashboard', {
+          headers: { 'Authorization': 'Bearer ' + agentSecret, 'X-Agent-ID': agentId }
+        });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const json = await res.json();
+        const d = json.data;
+        document.getElementById('dashTotalJobs').textContent = d.stats.totalJobs;
+        document.getElementById('dashCompletedJobs').textContent = d.stats.completedJobs;
+        document.getElementById('dashFailedJobs').textContent = d.stats.failedJobs;
+        document.getElementById('dashRevenue').textContent = (d.stats.totalRevenue / 100).toFixed(2);
+        document.getElementById('dashStations').textContent = d.stats.stationCount;
+        document.getElementById('dashPrinters').textContent = d.stats.printerCount;
+        // Printer status
+        const printers = [];
+        d.stations.forEach(s => s.printers.forEach(p => printers.push({...p, stationName: s.name})));
+        const psGrid = document.getElementById('dashPrinterStatus');
+        if (printers.length === 0) {
+          psGrid.innerHTML = '<div class="empty">No printers registered</div>';
+        } else {
+          psGrid.innerHTML = printers.map(p => {
+            const stateClass = p.isOnline ? 'badge-success' : 'badge-error';
+            const stateText = p.currentState || (p.isOnline ? 'ONLINE' : 'OFFLINE');
+            return '<div class="printer-item"><div class="printer-info"><div class="printer-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg></div><div><div class="printer-name">' + p.name + '</div><div class="printer-detail">' + p.stationName + '</div></div></div><span class="badge ' + stateClass + '">' + stateText + '</span></div>';
+          }).join('');
+        }
+        // Recent jobs
+        const jList = document.getElementById('dashRecentJobs');
+        if (d.recentJobs.length === 0) {
+          jList.innerHTML = '<div class="empty">No jobs yet</div>';
+        } else {
+          jList.innerHTML = d.recentJobs.map(j => {
+            const statusColors = { COMPLETED: 'badge-success', PRINT_FAILED: 'badge-error', QUEUED: 'badge-info', PRINTING: 'badge-info' };
+            return '<div class="job-row"><div><span class="job-id">' + j.jobId + '</span> <span class="job-station">' + (j.station?.name||'') + '</span></div><span class="badge ' + (statusColors[j.printStatus]||'badge-info') + '">' + j.printStatus + '</span></div>';
+          }).join('');
+        }
+        addLog('Dashboard loaded', 'success');
+      } catch (e) { addLog('Dashboard load failed: ' + e.message, 'error'); }
+    }
+    async function init() {
+      try {
+        const res = await fetch('/api/config');
+        const cfg = await res.json();
+        if (cfg.backendUrl) document.getElementById('inputBackendUrl').value = cfg.backendUrl;
+        if (cfg.agentId) document.getElementById('inputAgentId').value = cfg.agentId;
+        if (cfg.agentSecret) document.getElementById('inputAgentSecret').value = cfg.agentSecret;
+      } catch {}
+      checkStatus();
+      setInterval(checkStatus, 5000);
+      setTimeout(loadDashboard, 500);
+    }
+    init();
+  </script>
+</body>
+</html>

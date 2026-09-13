@@ -1,0 +1,2 @@
+[console_scripts]
+nexino-agent = nexino_agent.cli:main

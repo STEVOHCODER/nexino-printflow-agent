@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nexino Print Agent</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f1f5f9; color: #1e293b; height: 100vh; overflow: hidden; }
+    .app { display: flex; height: 100vh; }
+    .sidebar { width: 220px; background: #0f172a; color: white; display: flex; flex-direction: column; flex-shrink: 0; }
+    .sidebar-header { padding: 20px 16px; border-bottom: 1px solid #1e293b; }
+    .sidebar-header h1 { font-size: 16px; font-weight: 700; }
+    .sidebar-header p { font-size: 11px; color: #94a3b8; margin-top: 2px; }
+    .sidebar-nav { flex: 1; padding: 8px; }
+    .nav-item { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 6px; cursor: pointer; color: #94a3b8; font-size: 13px; }
+    .nav-item:hover { background: #1e293b; color: white; }
+    .nav-item.active { background: #2563eb; color: white; }
+    .nav-item svg { width: 16px; height: 16px; flex-shrink: 0; }
+    .sidebar-footer { padding: 12px 16px; border-top: 1px solid #1e293b; font-size: 12px; }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 6px; }
+    .status-dot.online { background: #22c55e; }
+    .status-dot.offline { background: #ef4444; }
+    .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+    .header { padding: 16px 24px; background: white; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
+    .header h2 { font-size: 18px; font-weight: 600; }
+    .content { flex: 1; padding: 24px; overflow-y: auto; }
+    .card { background: white; border-radius: 10px; border: 1px solid #e2e8f0; padding: 20px; margin-bottom: 16px; }
+    .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+    .card-title { font-size: 14px; font-weight: 600; }
+    .form-group { margin-bottom: 12px; }
+    .form-label { display: block; font-size: 12px; font-weight: 500; color: #475569; margin-bottom: 4px; }
+    .form-input { width: 100%; padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; }
+    .form-input:focus { outline: none; border-color: #2563eb; }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .btn { padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer; border: none; display: inline-flex; align-items: center; gap: 6px; }
+    .btn-primary { background: #2563eb; color: white; }
+    .btn-success { background: #22c55e; color: white; }
+    .btn-danger { background: #ef4444; color: white; }
+    .btn-outline { background: white; border: 1px solid #d1d5db; color: #374151; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-group { display: flex; gap: 8px; margin-top: 12px; }
+    .printer-list { display: flex; flex-direction: column; gap: 8px; }
+    .printer-item { display: flex; align-items: center; justify-content: space-between; padding: 12px; background: #f8fafc; border-radius: 6px; border: 1px solid #e2e8f0; }
+    .printer-info { display: flex; align-items: center; gap: 10px; }
+    .printer-icon { width: 32px; height: 32px; background: #e0e7ff; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: #2563eb; }
+    .printer-name { font-weight: 500; font-size: 13px; }
+    .printer-status { font-size: 11px; color: #64748b; }
+    .station-item { display: flex; align-items: center; justify-content: space-between; padding: 12px; background: #f0fdf4; border-radius: 6px; border: 1px solid #bbf7d0; margin-bottom: 8px; }
+    .log-console { background: #0f172a; border-radius: 6px; padding: 12px; height: 100%; min-height: 200px; overflow-y: auto; font-family: monospace; font-size: 11px; line-height: 1.5; }
+    .log-line { color: #94a3b8; }
+    .log-line.info { color: #38bdf8; }
+    .log-line.success { color: #4ade80; }
+    .log-line.error { color: #f87171; }
+    .empty-state { text-align: center; padding: 32px; color: #64748b; font-size: 13px; }
+    .badge { display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 9999px; font-size: 11px; font-weight: 500; }
+    .badge-success { background: #dcfce7; color: #166534; }
+    .badge-error { background: #fee2e2; color: #991b1b; }
+    .page { display: none; height: 100%; }
+    .page.active { display: flex; flex-direction: column; }
+    .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }
+    .stat-card { background: white; border-radius: 10px; border: 1px solid #e2e8f0; padding: 16px; }
+    .stat-label { font-size: 11px; color: #64748b; margin-bottom: 4px; }
+    .stat-value { font-size: 22px; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="sidebar">
+      <div class="sidebar-header">
+        <h1>Nexino Print Agent</h1>
+        <p>v1.0.0</p>
+      </div>
+      <div class="sidebar-nav">
+        <div class="nav-item active" onclick="showPage('dashboard', this)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+          Dashboard
+        </div>
+        <div class="nav-item" onclick="showPage('settings', this)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+          Settings
+        </div>
+        <div class="nav-item" onclick="showPage('stations', this)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>
+          Stations
+        </div>
+        <div class="nav-item" onclick="showPage('logs', this)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          Logs
+        </div>
+      </div>
+      <div class="sidebar-footer">
+        <span class="status-dot" id="statusDot"></span>
+        <span id="statusText">Disconnected</span>
+      </div>
+    </div>
+
+    <div class="main">
+      <!-- Dashboard -->
+      <div class="page active" id="page-dashboard">
+        <div class="header">
+          <h2>Dashboard</h2>
+          <div>
+            <button class="btn btn-success" id="btnStart" onclick="startAgent()">Start Agent</button>
+            <button class="btn btn-danger" id="btnStop" onclick="stopAgent()" style="display:none;">Stop Agent</button>
+          </div>
+        </div>
+        <div class="content">
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-label">Agent Status</div>
+              <div class="stat-value" id="agentStatus" style="color:#ef4444;">Offline</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Stations</div>
+              <div class="stat-value" id="stationCount">0</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Printers</div>
+              <div class="stat-value" id="printerCount">0</div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header"><span class="card-title">Recent Activity</span></div>
+            <div id="recentActivity" class="empty-state">Start the agent to see activity.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Settings -->
+      <div class="page" id="page-settings">
+        <div class="header"><h2>Settings</h2></div>
+        <div class="content">
+          <div class="card">
+            <div class="card-title" style="margin-bottom:12px;">Connection</div>
+            <div class="form-group">
+              <label class="form-label">Backend URL</label>
+              <input type="text" class="form-input" id="inputBackendUrl" placeholder="https://nexino-printflow-api.vercel.app">
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Agent ID</label>
+                <input type="text" class="form-input" id="inputAgentId" placeholder="AGENT-001">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Agent Secret</label>
+                <input type="password" class="form-input" id="inputAgentSecret" placeholder="Agent secret">
+              </div>
+            </div>
+            <div class="btn-group">
+              <button class="btn btn-primary" onclick="saveSettings()">Save</button>
+              <button class="btn btn-outline" onclick="testConnection()">Test</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <span class="card-title">Detected Printers</span>
+              <button class="btn btn-outline" onclick="detectPrinters()">Refresh</button>
+            </div>
+            <div id="printerList" class="printer-list">
+              <div class="empty-state">Click "Refresh" to detect printers.</div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header"><span class="card-title">Register Stations</span></div>
+            <p style="color:#64748b;font-size:12px;margin-bottom:12px;">Register detected printers as stations in the backend.</p>
+            <button class="btn btn-primary" onclick="registerStations()">Register Printers</button>
+            <div id="registerResult" style="margin-top:12px;"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Stations -->
+      <div class="page" id="page-stations">
+        <div class="header">
+          <h2>Stations</h2>
+          <button class="btn btn-outline" onclick="loadStations()">Refresh</button>
+        </div>
+        <div class="content">
+          <div id="stationList"><div class="empty-state">No stations yet. Register printers in Settings.</div></div>
+        </div>
+      </div>
+
+      <!-- Logs -->
+      <div class="page" id="page-logs">
+        <div class="header">
+          <h2>Agent Logs</h2>
+          <button class="btn btn-outline" onclick="clearLogs()">Clear</button>
+        </div>
+        <div class="content" style="padding:0;display:flex;flex-direction:column;">
+          <div class="log-console" id="logConsole">
+            <div class="log-line info">Nexino Print Agent started.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let config = {};
+
+    function showPage(page, el) {
+      document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+      document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+      document.getElementById('page-' + page).classList.add('active');
+      if (el) el.classList.add('active');
+    }
+
+    async function init() {
+      config = await window.electronAPI.getConfig();
+      document.getElementById('inputBackendUrl').value = config.backendUrl || '';
+      document.getElementById('inputAgentId').value = config.agentId || '';
+      document.getElementById('inputAgentSecret').value = config.agentSecret || '';
+      
+      const stations = config.stations || [];
+      const printers = config.printers || [];
+      document.getElementById('stationCount').textContent = stations.length;
+      document.getElementById('printerCount').textContent = printers.length;
+      
+      if (stations.length > 0) loadStations();
+
+      const status = await window.electronAPI.getAgentStatus();
+      updateAgentStatus(status.running);
+    }
+
+    async function saveSettings() {
+      config.backendUrl = document.getElementById('inputBackendUrl').value;
+      config.agentId = document.getElementById('inputAgentId').value;
+      config.agentSecret = document.getElementById('inputAgentSecret').value;
+      await window.electronAPI.saveConfig(config);
+      addLog('Settings saved', 'success');
+    }
+
+    async function testConnection() {
+      const url = document.getElementById('inputBackendUrl').value || config.backendUrl;
+      addLog('Testing connection to ' + url + '...', 'info');
+      try {
+        const response = await fetch(url + '/api/health');
+        const data = await response.json();
+        addLog(data.success ? 'Connection OK!' : 'Failed: ' + data.error, data.success ? 'success' : 'error');
+      } catch (e) {
+        addLog('Failed: ' + e.message, 'error');
+      }
+    }
+
+    async function detectPrinters() {
+      addLog('Detecting printers...', 'info');
+      const result = await window.electronAPI.detectPrinters();
+      const list = document.getElementById('printerList');
+      
+      if (result.printers && result.printers.length > 0) {
+        document.getElementById('printerCount').textContent = result.printers.length;
+        list.innerHTML = result.printers.map(p => `
+          <div class="printer-item">
+            <div class="printer-info">
+              <div class="printer-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg></div>
+              <div>
+                <div class="printer-name">${p.name}</div>
+                <div class="printer-status">${p.driver || 'N/A'} &bull; ${p.status || 'Unknown'}</div>
+              </div>
+            </div>
+            <span class="badge badge-success">${p.adapterType || 'WINDOWS'}</span>
+          </div>
+        `).join('');
+        addLog('Found ' + result.printers.length + ' printer(s)', 'success');
+      } else {
+        list.innerHTML = '<div class="empty-state">No printers detected.</div>';
+        addLog('No printers found', 'error');
+      }
+    }
+
+    async function registerStations() {
+      if (!config.agentId) { addLog('Set Agent ID first', 'error'); return; }
+      addLog('Registering stations...', 'info');
+      const result = await window.electronAPI.registerStations({
+        agentId: config.agentId,
+        backendUrl: config.backendUrl,
+        agentSecret: config.agentSecret,
+      });
+      
+      const div = document.getElementById('registerResult');
+      if (result.success && result.stations && result.stations.length > 0) {
+        config = await window.electronAPI.getConfig();
+        document.getElementById('stationCount').textContent = (config.stations || []).length;
+        div.innerHTML = '<span class="badge badge-success">Registered ' + result.stations.length + ' station(s)!</span>';
+        addLog('Registered ' + result.stations.length + ' station(s)', 'success');
+        loadStations();
+      } else {
+        div.innerHTML = '<span class="badge badge-error">Registration failed</span>';
+        addLog('Failed: ' + (result.output || 'Unknown error'), 'error');
+      }
+    }
+
+    async function loadStations() {
+      config = await window.electronAPI.getConfig();
+      const stations = config.stations || [];
+      const list = document.getElementById('stationList');
+      document.getElementById('stationCount').textContent = stations.length;
+      
+      if (stations.length > 0) {
+        list.innerHTML = stations.map(s => `
+          <div class="station-item">
+            <div>
+              <div style="font-weight:500;font-size:13px;">${s.name || s.stationCode}</div>
+              <div style="font-size:11px;color:#64748b;">${s.stationId} &bull; ${s.printerName || ''}</div>
+            </div>
+            <span class="badge badge-success">Active</span>
+          </div>
+        `).join('');
+      } else {
+        list.innerHTML = '<div class="empty-state">No stations. Register printers in Settings.</div>';
+      }
+    }
+
+    async function startAgent() {
+      const stations = config.stations || [];
+      if (stations.length === 0) { addLog('No stations. Register printers first.', 'error'); return; }
+      addLog('Starting agent...', 'info');
+      const result = await window.electronAPI.startAgent({
+        stationId: stations[0].stationId,
+        agentId: config.agentId,
+        backendUrl: config.backendUrl,
+      });
+      if (result.success) { updateAgentStatus(true); addLog('Agent started (PID: ' + result.pid + ')', 'success'); }
+    }
+
+    async function stopAgent() {
+      await window.electronAPI.stopAgent();
+      updateAgentStatus(false);
+      addLog('Agent stopped', 'info');
+    }
+
+    function updateAgentStatus(running) {
+      document.getElementById('statusDot').className = 'status-dot ' + (running ? 'online' : 'offline');
+      document.getElementById('statusText').textContent = running ? 'Connected' : 'Disconnected';
+      const s = document.getElementById('agentStatus');
+      s.textContent = running ? 'Running' : 'Offline';
+      s.style.color = running ? '#22c55e' : '#ef4444';
+      document.getElementById('btnStart').style.display = running ? 'none' : 'inline-flex';
+      document.getElementById('btnStop').style.display = running ? 'inline-flex' : 'none';
+    }
+
+    function addLog(message, type) {
+      const c = document.getElementById('logConsole');
+      const line = document.createElement('div');
+      line.className = 'log-line ' + (type || '');
+      line.textContent = '[' + new Date().toLocaleTimeString() + '] ' + message;
+      c.appendChild(line);
+      c.scrollTop = c.scrollHeight;
+    }
+
+    function clearLogs() { document.getElementById('logConsole').innerHTML = ''; }
+
+    window.electronAPI.onAgentLog((data) => { addLog(data.trim(), 'info'); });
+    window.electronAPI.onAgentStopped((code) => { updateAgentStatus(false); addLog('Agent stopped (code: ' + code + ')', 'error'); });
+
+    init();
+  </script>
+</body>
+</html>
