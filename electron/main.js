@@ -65,11 +65,27 @@ function createWindow() {
 app.whenReady().then(createWindow);
 
 app.on('window-all-closed', () => {
-  if (agentProcess) {
-    agentProcess.kill();
-  }
+  killAgent();
   app.quit();
 });
+
+app.on('before-quit', () => {
+  killAgent();
+});
+
+function killAgent() {
+  if (agentProcess) {
+    try {
+      // Kill the process tree on Windows (agent may spawn child processes)
+      const { execSync } = require('child_process');
+      if (process.platform === 'win32') {
+        try { execSync(`taskkill /PID ${agentProcess.pid} /T /F`, { stdio: 'ignore' }); } catch {}
+      }
+      agentProcess.kill();
+    } catch {}
+    agentProcess = null;
+  }
+}
 
 // ==================== AUTO-UPDATE ====================
 
