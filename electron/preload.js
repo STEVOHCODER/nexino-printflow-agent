@@ -12,4 +12,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   selectFolder: () => ipcRenderer.invoke('select-folder'),
   onAgentLog: (callback) => ipcRenderer.on('agent-log', (event, data) => callback(data)),
   onAgentStopped: (callback) => ipcRenderer.on('agent-stopped', (event, code) => callback(code)),
+
+  // Auto-update
+  checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
+  installUpdate: () => ipcRenderer.invoke('install-update'),
+  getAppVersion: () => ipcRenderer.invoke('get-app-version'),
+  onUpdateStatus: (callback) => ipcRenderer.on('update-status', (event, data) => callback(data)),
 });

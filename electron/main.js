@@ -1,12 +1,22 @@
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const { spawn } = require('child_process');
+const { autoUpdater } = require('electron-updater');
 const Store = require('electron-store');
 
 const isProd = app.isPackaged;
 const agentRoot = isProd
   ? path.join(process.resourcesPath)
   : path.join(__dirname, '..');
+
+// Configure auto-updater
+autoUpdater.autoDownload = false;
+autoUpdater.autoInstallOnAppQuit = true;
+autoUpdater.logger = {
+  info: (msg) => console.log('[Updater]', msg),
+  warn: (msg) => console.warn('[Updater]', msg),
+  error: (msg) => console.error('[Updater]', msg),
+};
 
 const store = new Store({
   defaults: {
@@ -43,6 +53,13 @@ function createWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+
+  // Check for updates after window is ready
+  if (isProd) {
+    setTimeout(() => {
+      checkForUpdates();
+    }, 3000);
+  }
 }
 
 app.whenReady().then(createWindow);
@@ -54,7 +71,83 @@ app.on('window-all-closed', () => {
   app.quit();
 });
 
-// IPC Handlers
+// ==================== AUTO-UPDATE ====================
+
+function checkForUpdates() {
+  autoUpdater.checkForUpdates().catch((err) => {
+    console.error('Update check failed:', err.message);
+  });
+}
+
+autoUpdater.on('checking-for-update', () => {
+  sendUpdateStatus('checking');
+});
+
+autoUpdater.on('update-available', (info) => {
+  sendUpdateStatus('available', {
+    version: info.version,
+    releaseNotes: info.releaseNotes,
+  });
+
+  // Prompt user to download
+  dialog.showMessageBox(mainWindow, {
+    type: 'info',
+    title: 'Update Available',
+    message: `A new version (v${info.version}) is available.`,
+    detail: 'Would you like to download and install it now? The app will restart automatically.',
+    buttons: ['Download & Install', 'Later'],
+    defaultId: 0,
+    cancelId: 1,
+  }).then(({ response }) => {
+    if (response === 0) {
+      sendUpdateStatus('downloading');
+      autoUpdater.downloadUpdate();
+    }
+  });
+});
+
+autoUpdater.on('update-not-available', () => {
+  sendUpdateStatus('up-to-date');
+});
+
+autoUpdater.on('download-progress', (progress) => {
+  sendUpdateStatus('downloading', {
+    percent: Math.round(progress.percent),
+    transferred: progress.transferred,
+    total: progress.total,
+  });
+});
+
+autoUpdater.on('update-downloaded', (info) => {
+  sendUpdateStatus('downloaded', { version: info.version });
+
+  dialog.showMessageBox(mainWindow, {
+    type: 'info',
+    title: 'Update Ready',
+    message: `Version ${info.version} has been downloaded.`,
+    detail: 'The app will restart to apply the update. Save any unsaved work.',
+    buttons: ['Restart Now', 'Later'],
+    defaultId: 0,
+    cancelId: 1,
+  }).then(({ response }) => {
+    if (response === 0) {
+      autoUpdater.quitAndInstall();
+    }
+  });
+});
+
+autoUpdater.on('error', (err) => {
+  sendUpdateStatus('error', { message: err.message });
+});
+
+function sendUpdateStatus(status, data = {}) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('update-status', { status, ...data });
+  }
+}
+
+// ==================== IPC HANDLERS ====================
+
 ipcMain.handle('get-config', () => {
   return store.store;
 });
@@ -62,6 +155,23 @@ ipcMain.handle('get-config', () => {
 ipcMain.handle('save-config', (event, config) => {
   store.set(config);
   return { success: true };
+});
+
+ipcMain.handle('check-for-updates', () => {
+  if (isProd) {
+    checkForUpdates();
+    return { success: true };
+  }
+  return { success: false, error: 'Auto-update only available in production builds' };
+});
+
+ipcMain.handle('install-update', () => {
+  autoUpdater.quitAndInstall();
+  return { success: true };
+});
+
+ipcMain.handle('get-app-version', () => {
+  return app.getVersion();
 });
 
 ipcMain.handle('detect-printers', async () => {

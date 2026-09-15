@@ -16,4 +16,5 @@ downloads/
 output/
 electron/node_modules/
 electron/dist-installer/
-deploy/dist-deploy/
+deploy/dist-deploy/agent_config.json
+gui/config.json
