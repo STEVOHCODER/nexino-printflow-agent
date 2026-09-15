@@ -18,6 +18,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -53,6 +55,28 @@ jobs:
           echo "version=$ver" >> $env:GITHUB_OUTPUT
           echo "Tag: $tag, Version: $ver"
 
+      - name: Check if tag exists
+        id: check_tag
+        shell: pwsh
+        run: |
+          $tag = "${{ steps.tag.outputs.tag }}"
+          $exists = git tag -l $tag
+          if ($exists) {
+            echo "exists=true" >> $env:GITHUB_OUTPUT
+            echo "Tag $tag already exists, will use next patch"
+            # Bump to next patch
+            $ver = "${{ steps.tag.outputs.version }}"
+            $parts = $ver -split '\.'
+            $patch = [int]$parts[2] + 1
+            $new_ver = "$($parts[0]).$($parts[1]).$patch"
+            $new_tag = "v$new_ver"
+            echo "tag=$new_tag" >> $env:GITHUB_OUTPUT
+            echo "version=$new_ver" >> $env:GITHUB_OUTPUT
+            echo "New tag: $new_tag"
+          } else {
+            echo "exists=false" >> $env:GITHUB_OUTPUT
+          }
+
       - name: Update package.json version
         shell: pwsh
         run: |
@@ -81,8 +105,10 @@ jobs:
             ## Nexino Print Agent ${{ steps.tag.outputs.tag }}
 
             ### What's New
-            - Auto-update support (check & install from within the app)
-            - Bug fixes and improvements
+            - Pre-flight hardware check (printer status verified before payment)
+            - Network resilience (idempotency keys, crash recovery)
+            - Download integrity verification (SHA-256)
+            - Auto-update support
 
             ### Installation
             1. Download `Nexino Print Agent Setup ${{ steps.tag.outputs.version }}.exe`
@@ -104,5 +130,3 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add electron/package.json
           git commit -m "chore: bump version to ${{ steps.tag.outputs.tag }}" || echo "No changes to commit"
-          git tag ${{ steps.tag.outputs.tag }}
-          git push origin ${{ steps.tag.outputs.tag }}
