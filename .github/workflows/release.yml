@@ -45,37 +45,25 @@ jobs:
             $tag = $input
             $ver = $input -replace '^v', ''
           } else {
-            # Auto-bump patch version
             $parts = $current -split '\.'
             $patch = [int]$parts[2] + 1
             $ver = "$($parts[0]).$($parts[1]).$patch"
             $tag = "v$ver"
           }
+
+          # Check if tag already exists, if so bump again
+          $exists = git tag -l $tag
+          while ($exists) {
+            $parts = $ver -split '\.'
+            $patch = [int]$parts[2] + 1
+            $ver = "$($parts[0]).$($parts[1]).$patch"
+            $tag = "v$ver"
+            $exists = git tag -l $tag
+          }
+
           echo "tag=$tag" >> $env:GITHUB_OUTPUT
           echo "version=$ver" >> $env:GITHUB_OUTPUT
           echo "Tag: $tag, Version: $ver"
-
-      - name: Check if tag exists
-        id: check_tag
-        shell: pwsh
-        run: |
-          $tag = "${{ steps.tag.outputs.tag }}"
-          $exists = git tag -l $tag
-          if ($exists) {
-            echo "exists=true" >> $env:GITHUB_OUTPUT
-            echo "Tag $tag already exists, will use next patch"
-            # Bump to next patch
-            $ver = "${{ steps.tag.outputs.version }}"
-            $parts = $ver -split '\.'
-            $patch = [int]$parts[2] + 1
-            $new_ver = "$($parts[0]).$($parts[1]).$patch"
-            $new_tag = "v$new_ver"
-            echo "tag=$new_tag" >> $env:GITHUB_OUTPUT
-            echo "version=$new_ver" >> $env:GITHUB_OUTPUT
-            echo "New tag: $new_tag"
-          } else {
-            echo "exists=false" >> $env:GITHUB_OUTPUT
-          }
 
       - name: Update package.json version
         shell: pwsh
