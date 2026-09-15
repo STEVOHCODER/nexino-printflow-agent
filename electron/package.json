@@ -62,7 +62,8 @@
             "x64"
           ]
         }
-      ]
+      ],
+      "artifactName": "Nexino-Print-Agent-Setup-${version}.${ext}"
     },
     "nsis": {
       "oneClick": false,
