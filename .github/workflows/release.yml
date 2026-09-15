@@ -107,6 +107,7 @@ jobs:
             Existing users will be notified of this update automatically in the app.
           files: |
             electron/dist-installer/Nexino Print Agent Setup ${{ steps.tag.outputs.version }}.exe
+            electron/dist-installer/latest.yml
           draft: false
           prerelease: false
         env:
