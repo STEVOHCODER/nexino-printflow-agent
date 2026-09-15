@@ -147,6 +147,7 @@ class NexinoAPIClient:
         path = "/api/agent/heartbeat"
         payload = {
             "agentId": self.config.agent_id,
+            "stationId": self.config.station_id or None,
             "printers": printers or [],
         }
 

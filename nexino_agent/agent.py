@@ -192,6 +192,14 @@ class NexinoAgent:
         )
         heartbeat_thread.start()
 
+        # Send immediate heartbeat so station shows as online
+        try:
+            printer_list = self._get_printer_heartbeats()
+            self.api_client.heartbeat(printers=printer_list)
+            logger.info("Initial heartbeat sent.")
+        except Exception as e:
+            logger.debug(f"Initial heartbeat failed: {e}")
+
         logger.info("Agent started. Press Ctrl+C to stop.")
 
         try:
