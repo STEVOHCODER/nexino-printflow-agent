@@ -28,7 +28,7 @@ echo Done.
 echo.
 
 echo [3/3] Starting agent...
-echo Backend: https://nexino-printflow-api.vercel.app
+echo Backend: https://backend-mauve-delta-32.vercel.app
 echo Agent ID: AGENT-001
 echo.
 echo ============================================
@@ -36,4 +36,4 @@ echo    Press Ctrl+C to stop
 echo ============================================
 echo.
 
-python -m nexino_agent start --agent-id AGENT-001 --backend-url https://nexino-printflow-api.vercel.app --virtual
+python -m nexino_agent start --agent-id AGENT-001 --backend-url https://backend-mauve-delta-32.vercel.app

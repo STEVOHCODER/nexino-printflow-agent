@@ -9,6 +9,7 @@ import json
 import time
 import shutil
 import logging
+import tempfile
 import uuid
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -24,7 +25,14 @@ from ..models import (
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_OUTPUT_DIR = Path(__file__).parent.parent.parent / "output"
+
+def _get_default_output_dir() -> Path:
+    """Get a writable default output directory.
+
+    Uses temp directory to avoid permission issues when installed
+    in Program Files or other read-only locations.
+    """
+    return Path(tempfile.gettempdir()) / "nexino-print-output"
 
 
 class VirtualAdapter(PrinterAdapter):
@@ -47,8 +55,13 @@ class VirtualAdapter(PrinterAdapter):
             simulate_delay: Whether to simulate printing delays.
             delay_seconds: Delay in seconds to simulate printing.
         """
-        self.output_dir = Path(output_dir) if output_dir else DEFAULT_OUTPUT_DIR
-        self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.output_dir = Path(output_dir) if output_dir else _get_default_output_dir()
+        try:
+            self.output_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            logger.warning(f"Cannot create output dir {self.output_dir}: {e}. Using temp dir.")
+            self.output_dir = Path(tempfile.gettempdir()) / "nexino-print-output"
+            self.output_dir.mkdir(parents=True, exist_ok=True)
         self.simulate_delay = simulate_delay
         self.delay_seconds = delay_seconds
 

@@ -71,7 +71,7 @@ if not exist ".env" (
         echo STATION_ID=
         echo POLL_INTERVAL_SECONDS=3
         echo PRINTER_NAME=
-        echo VIRTUAL_MODE=true
+        echo VIRTUAL_MODE=false
         echo LOG_LEVEL=INFO
         echo OUTPUT_DIRECTORY=
     ) > .env

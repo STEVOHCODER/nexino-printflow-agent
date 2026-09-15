@@ -63,7 +63,7 @@ class AgentConfig:
             station_id=os.getenv("STATION_ID", cls.station_id),
             poll_interval_seconds=int(os.getenv("POLL_INTERVAL_SECONDS", cls.poll_interval_seconds)),
             printer_name=os.getenv("PRINTER_NAME", cls.printer_name),
-            virtual_mode=os.getenv("VIRTUAL_MODE", "true").lower() in ("true", "1", "yes"),
+            virtual_mode=os.getenv("VIRTUAL_MODE", "false").lower() in ("true", "1", "yes"),
             log_level=os.getenv("LOG_LEVEL", cls.log_level).upper(),
             output_directory=os.getenv("OUTPUT_DIRECTORY", cls.output_directory),
             heartbeat_interval_seconds=int(os.getenv("HEARTBEAT_INTERVAL_SECONDS", cls.heartbeat_interval_seconds)),

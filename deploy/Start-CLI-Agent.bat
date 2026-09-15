@@ -29,4 +29,4 @@ echo    Press Ctrl+C to stop
 echo ============================================
 echo.
 
-python -m nexino_agent start --agent-id AGENT-001 --backend-url https://backend-mauve-delta-32.vercel.app --virtual
+python -m nexino_agent start --agent-id AGENT-001 --backend-url https://backend-mauve-delta-32.vercel.app

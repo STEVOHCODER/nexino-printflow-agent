@@ -8,6 +8,7 @@ import json
 import logging
 import platform
 import socket
+import tempfile
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -18,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 class AutoRegistrar:
-    """Detects printers and registers stations with the backend."""
+    """Detects printers and register stations with the backend."""
 
     def __init__(
         self,
@@ -32,7 +33,15 @@ class AutoRegistrar:
         self.api_client = AgentApiClient(backend_url, agent_id, agent_secret)
         self.hostname = socket.gethostname()
         self.platform_name = platform.system().lower()
-        self.config_path = Path(config_path or Path(__file__).parent.parent / "agent_config.json")
+
+        if config_path:
+            self.config_path = Path(config_path)
+        else:
+            # Save to user's home directory to avoid write permission issues
+            # when installed in Program Files or other read-only locations
+            config_dir = Path.home() / ".nexino"
+            config_dir.mkdir(parents=True, exist_ok=True)
+            self.config_path = config_dir / "agent_config.json"
 
     def detect_printers(self, adapter_types: Optional[List[str]] = None) -> List[Dict]:
         """Detect all printers on the system.
