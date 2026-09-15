@@ -56,7 +56,8 @@ class NexinoAPIClient:
             backoff_factor=self.config.retry_base_delay,
             backoff_max=self.config.retry_max_delay,
             status_forcelist=[429, 500, 502, 503, 504],
-            allowed_methods=["HEAD", "GET", "POST", "PUT"],
+            # Only retry safe methods — POST is NOT idempotent by default
+            allowed_methods=["HEAD", "GET", "PUT"],
         )
         adapter = HTTPAdapter(max_retries=retry_strategy)
         session.mount("http://", adapter)
@@ -201,6 +202,9 @@ class NexinoAPIClient:
     ) -> Dict[str, Any]:
         """Report a job status change to the backend.
 
+        Uses an idempotency key derived from job_id + status to prevent
+        duplicate side effects on network retries.
+
         Args:
             job_id: The job ID.
             status: New status.
@@ -220,12 +224,17 @@ class NexinoAPIClient:
         if error_message:
             payload["errorMessage"] = error_message
 
+        # Idempotency key: same job + same status = same key = no duplicate
+        idempotency_key = hashlib.sha256(f"{job_id}:{status.value}".encode()).hexdigest()[:32]
+
         try:
             url = f"{self.base_url}{path}"
+            headers = self._get_headers()
+            headers["Idempotency-Key"] = idempotency_key
             response = self.session.post(
                 url,
                 json=payload,
-                headers=self._get_headers(),
+                headers=headers,
                 timeout=self.config.api_timeout,
             )
             response.raise_for_status()
@@ -270,18 +279,19 @@ class NexinoAPIClient:
         except requests.exceptions.RequestException as e:
             raise APIError(f"Failed to update printer status: {e}", getattr(e.response, "status_code", None))
 
-    def download_file(self, file_url: str, destination: str) -> str:
-        """Download a PDF file from the backend.
+    def download_file(self, file_url: str, destination: str, expected_checksum: Optional[str] = None) -> str:
+        """Download a PDF file from the backend with integrity verification.
 
         Args:
             file_url: URL to download from.
             destination: Local path to save the file.
+            expected_checksum: Optional SHA-256 checksum to verify against.
 
         Returns:
             Path to the downloaded file.
 
         Raises:
-            APIError: If download fails.
+            APIError: If download fails or checksum mismatch.
         """
         try:
             url = file_url if file_url.startswith("http") else f"{self.base_url}{file_url}"
@@ -296,11 +306,20 @@ class NexinoAPIClient:
             dest_path = Path(destination)
             dest_path.parent.mkdir(parents=True, exist_ok=True)
 
+            sha256 = hashlib.sha256()
             with open(dest_path, "wb") as f:
                 for chunk in response.iter_content(chunk_size=8192):
                     f.write(chunk)
+                    sha256.update(chunk)
 
-            logger.info(f"File downloaded to {destination}")
+            actual_checksum = sha256.hexdigest()
+            if expected_checksum and actual_checksum != expected_checksum:
+                dest_path.unlink(missing_ok=True)
+                raise APIError(
+                    f"Checksum mismatch: expected {expected_checksum}, got {actual_checksum}"
+                )
+
+            logger.info(f"File downloaded to {destination} (checksum: {actual_checksum[:16]}...)")
             return str(dest_path)
         except requests.exceptions.RequestException as e:
             raise APIError(f"File download failed: {e}", getattr(e.response, "status_code", None))

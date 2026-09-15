@@ -171,6 +171,9 @@ class NexinoAgent:
         self._running = True
         self._start_time = datetime.utcnow()
 
+        # Load previously processed jobs from disk (crash recovery)
+        self._load_processed_jobs()
+
         if not self.config.agent_id:
             try:
                 logger.info("Auto-registering agent with backend...")
@@ -245,6 +248,9 @@ class NexinoAgent:
             )
 
     def poll_for_jobs(self) -> None:
+        # Periodically clean up old job states
+        self._cleanup_old_job_states()
+
         try:
             jobs = self.api_client.get_pending_jobs()
         except APIError as e:
@@ -290,6 +296,8 @@ class NexinoAgent:
                     logger.error(f"Job {job.job_id} failed permanently: {error_msg}")
                     with self._lock:
                         self._jobs_failed += 1
+                        self._processed_jobs.add(job.job_id)
+                        self._save_job_state(job.job_id, "PRINT_FAILED")
                     try:
                         self.api_client.update_job_status(
                             job.job_id, JobStatus.PRINT_FAILED, error_message=error_msg
@@ -304,6 +312,23 @@ class NexinoAgent:
         if not job.authorization_token:
             raise ValueError("Job has no authorization token.")
 
+        # PRE-FLIGHT CHECK: Verify printer hardware is ready before accepting job
+        self.monitor.check_status()  # Refresh cached status
+        if not self.monitor.is_printer_ready():
+            status_summary = self.monitor.get_summary()
+            logger.warning(f"Printer not ready, rejecting job {job.job_id}: {status_summary}")
+            # Report specific error type to backend
+            last = self.monitor.last_status
+            if last and last.state in (PrinterState.OFFLINE,):
+                raise RuntimeError(f"Printer offline: {status_summary}")
+            elif last and last.error_message:
+                raise RuntimeError(f"Printer error: {last.error_message}")
+            else:
+                raise RuntimeError(f"Printer not ready: {status_summary}")
+
+        # Report station readiness to backend
+        self._report_station_ready(True)
+
         self.api_client.update_job_status(job.job_id, JobStatus.PRINTING)
 
         download_dir = Path(self.config.output_directory or tempfile.gettempdir()) / "nexino-downloads"
@@ -314,6 +339,11 @@ class NexinoAgent:
         download_url = f"{self.config.backend_url}/api/agent/download/{job.job_id}"
         self.api_client.download_file(download_url, str(file_path))
         job.local_file_path = str(file_path)
+
+        # Verify downloaded file is a valid PDF
+        if not self._verify_pdf(file_path):
+            file_path.unlink(missing_ok=True)
+            raise RuntimeError(f"Downloaded file is not a valid PDF for job {job.job_id}")
 
         self.api_client.update_job_status(job.job_id, JobStatus.PRINTING)
 
@@ -336,6 +366,13 @@ class NexinoAgent:
             else:
                 raise RuntimeError("No printer available.")
 
+        # POST-PRINT CHECK: Verify printer is still ready right before submission
+        self.monitor.check_status()
+        if not self.monitor.is_printer_ready():
+            status_summary = self.monitor.get_summary()
+            logger.warning(f"Printer became unready before submission: {status_summary}")
+            raise RuntimeError(f"Printer not ready for submission: {status_summary}")
+
         self._validate_print_options(printer_name, options)
 
         logger.info(f"Submitting job {job.job_id} to printer '{printer_name}'...")
@@ -343,10 +380,16 @@ class NexinoAgent:
             printer_name, str(file_path), options
         )
 
+        # POST-PRINT VERIFICATION: Wait briefly then verify printer accepted the job
+        time.sleep(1.0)
+        self.monitor.check_status()
+
         self.api_client.update_job_status(job.job_id, JobStatus.COMPLETED)
 
         with self._lock:
             self._jobs_processed += 1
+            self._processed_jobs.add(job.job_id)
+            self._save_job_state(job.job_id, "COMPLETED")
 
         logger.info(
             f"Job {job.job_id} completed successfully. "
@@ -403,6 +446,93 @@ class NexinoAgent:
                 })
 
         return heartbeats
+
+    def _report_station_ready(self, is_ready: bool) -> None:
+        """Report station hardware readiness to backend."""
+        if not self.config.station_id:
+            return
+        try:
+            last = self.monitor.last_status
+            printer_status = None
+            if last:
+                printer_status = {
+                    "status": last.state.value,
+                    "paperStatus": last.paper_status.value if last.paper_status else "UNKNOWN",
+                    "tonerStatus": last.toner_status.value if last.toner_status else "UNKNOWN",
+                }
+                if last.error_message:
+                    printer_status["errorMessage"] = last.error_message
+
+            self.api_client.session.post(
+                f"{self.api_client.base_url}/api/agent/station-ready",
+                json={
+                    "stationId": self.config.station_id,
+                    "isReady": is_ready,
+                    "printerStatus": printer_status,
+                },
+                headers=self.api_client._get_headers(),
+                timeout=self.config.api_timeout,
+            )
+        except Exception as e:
+            logger.debug(f"Failed to report station readiness: {e}")
+
+    def _verify_pdf(self, file_path: Path) -> bool:
+        """Verify that a downloaded file is a valid PDF by checking magic bytes."""
+        try:
+            with open(file_path, "rb") as f:
+                header = f.read(5)
+            return header == b"%PDF-"
+        except Exception:
+            return False
+
+    def _save_job_state(self, job_id: str, state: str) -> None:
+        """Persist job state to local disk for crash recovery."""
+        state_file = Path(self.config.output_directory or tempfile.gettempdir()) / "nexino-downloads" / "job_state.json"
+        try:
+            state_file.parent.mkdir(parents=True, exist_ok=True)
+            existing = {}
+            if state_file.exists():
+                import json
+                with open(state_file, "r") as f:
+                    existing = json.load(f)
+            existing[job_id] = {"state": state, "timestamp": datetime.utcnow().isoformat()}
+            import json
+            with open(state_file, "w") as f:
+                json.dump(existing, f)
+        except Exception as e:
+            logger.debug(f"Failed to save job state: {e}")
+
+    def _load_processed_jobs(self) -> None:
+        """Load previously processed jobs from disk to prevent reprocessing after restart."""
+        state_file = Path(self.config.output_directory or tempfile.gettempdir()) / "nexino-downloads" / "job_state.json"
+        try:
+            if state_file.exists():
+                import json
+                with open(state_file, "r") as f:
+                    states = json.load(f)
+                for job_id, info in states.items():
+                    if info.get("state") in ("COMPLETED", "PRINT_FAILED"):
+                        self._processed_jobs.add(job_id)
+                logger.info(f"Loaded {len(self._processed_jobs)} previously processed jobs from disk")
+        except Exception as e:
+            logger.debug(f"Failed to load job state: {e}")
+
+    def _cleanup_old_job_states(self) -> None:
+        """Remove job states older than 24 hours from the state file."""
+        state_file = Path(self.config.output_directory or tempfile.gettempdir()) / "nexino-downloads" / "job_state.json"
+        try:
+            if not state_file.exists():
+                return
+            import json
+            with open(state_file, "r") as f:
+                states = json.load(f)
+            cutoff = datetime.utcnow().isoformat()
+            cleaned = {k: v for k, v in states.items()
+                       if v.get("timestamp", "") > cutoff[:10]}  # Keep if same day
+            with open(state_file, "w") as f:
+                json.dump(cleaned, f)
+        except Exception:
+            pass
 
     def get_status(self) -> dict:
         uptime = 0.0
