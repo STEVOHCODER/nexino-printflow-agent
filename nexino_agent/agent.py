@@ -174,6 +174,9 @@ class NexinoAgent:
         # Load previously processed jobs from disk (crash recovery)
         self._load_processed_jobs()
 
+        # Load printer IDs from saved config
+        self._load_printer_ids()
+
         if not self.config.agent_id:
             try:
                 logger.info("Auto-registering agent with backend...")
@@ -524,6 +527,27 @@ class NexinoAgent:
                 logger.info(f"Loaded {len(self._processed_jobs)} previously processed jobs from disk")
         except Exception as e:
             logger.debug(f"Failed to load job state: {e}")
+
+    def _load_printer_ids(self) -> None:
+        """Load printer IDs from the backend API."""
+        try:
+            url = f"{self.api_client.base_url}/api/agent/printers"
+            resp = self.api_client.session.get(
+                url,
+                headers=self.api_client._get_headers(),
+                timeout=self.config.api_timeout,
+            )
+            if resp.ok:
+                data = resp.json().get("data", [])
+                for p in data:
+                    name = p.get("name", "")
+                    pid = p.get("id", "")
+                    if name and pid:
+                        self._printer_ids[name] = pid
+                if self._printer_ids:
+                    logger.info(f"Loaded printer IDs: {list(self._printer_ids.keys())}")
+        except Exception as e:
+            logger.debug(f"Failed to load printer IDs from API: {e}")
 
     def _cleanup_old_job_states(self) -> None:
         """Remove job states older than 24 hours from the state file."""
