@@ -6,9 +6,30 @@ const Store = require('electron-store');
 const fs = require('fs');
 
 const isProd = app.isPackaged;
+const appDir = isProd
+  ? path.join(process.resourcesPath, '..', '..')
+  : path.join(__dirname, '..');
 const agentRoot = isProd
   ? path.join(process.resourcesPath)
   : path.join(__dirname, '..');
+
+// Bundled Python path (Inno Setup installs it next to the app)
+const bundledPython = path.join(appDir, 'python', 'python.exe');
+const bundledAgent = path.join(appDir, 'agent');
+
+function getPythonPath() {
+  // Use bundled Python if it exists (Inno Setup install)
+  if (fs.existsSync(bundledPython)) return bundledPython;
+  // Fall back to system Python
+  return 'python';
+}
+
+function getAgentRoot() {
+  // Use bundled agent if it exists (Inno Setup install)
+  if (fs.existsSync(bundledAgent)) return bundledAgent;
+  // Fall back to original agentRoot
+  return agentRoot;
+}
 
 // Configure auto-updater
 autoUpdater.autoDownload = false;
@@ -37,7 +58,7 @@ let agentProcess = null;
 
 function checkPython() {
   try {
-    execSync('python --version', { stdio: 'ignore' });
+    execSync(`"${getPythonPath()}" --version`, { stdio: 'ignore' });
     return true;
   } catch {
     return false;
@@ -56,8 +77,8 @@ function installDependencies(mainWindow) {
       mainWindow.webContents.send('agent-log', '[Setup] Installing Python dependencies...\n');
     }
 
-    const pip = spawn('python', ['-m', 'pip', 'install', '-r', reqFile, '--quiet'], {
-      cwd: agentRoot,
+    const pip = spawn(getPythonPath(), ['-m', 'pip', 'install', '-r', reqFile, '--quiet'], {
+      cwd: getAgentRoot(),
       shell: true,
       env: { ...process.env, PYTHONPATH: agentRoot }
     });
@@ -277,10 +298,10 @@ ipcMain.handle('get-app-version', () => {
 
 ipcMain.handle('detect-printers', async () => {
   return new Promise((resolve) => {
-    const python = spawn('python', ['-m', 'nexino_agent', 'detect'], {
-      cwd: agentRoot,
+    const python = spawn(getPythonPath(), ['-m', 'nexino_agent', 'detect'], {
+      cwd: getAgentRoot(),
       shell: true,
-      env: { ...process.env, PYTHONPATH: agentRoot }
+      env: { ...process.env, PYTHONPATH: getAgentRoot() }
     });
 
     let output = '';
@@ -307,10 +328,10 @@ ipcMain.handle('register-stations', async (event, { agentId, backendUrl, agentSe
       '--yes',
     ];
 
-    const python = spawn('python', args, {
-      cwd: agentRoot,
+    const python = spawn(getPythonPath(), args, {
+      cwd: getAgentRoot(),
       shell: true,
-      env: { ...process.env, PYTHONPATH: agentRoot }
+      env: { ...process.env, PYTHONPATH: getAgentRoot() }
     });
 
     let output = '';
@@ -351,10 +372,10 @@ ipcMain.handle('start-agent', async (event, { stationId, agentId, backendUrl }) 
     args.push('--station-id', stationId);
   }
 
-  agentProcess = spawn('python', args, {
-    cwd: agentRoot,
+  agentProcess = spawn(getPythonPath(), args, {
+    cwd: getAgentRoot(),
     shell: true,
-    env: { ...process.env, PYTHONPATH: agentRoot }
+    env: { ...process.env, PYTHONPATH: getAgentRoot() }
   });
 
   agentProcess.stdout.on('data', (data) => {

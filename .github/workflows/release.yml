@@ -51,7 +51,6 @@ jobs:
             $tag = "v$ver"
           }
 
-          # Check if tag already exists, if so bump again
           $exists = git tag -l $tag
           while ($exists) {
             $parts = $ver -split '\.'
@@ -78,11 +77,100 @@ jobs:
         working-directory: electron
         run: npm install
 
-      - name: Build Windows installer
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          choco install innosetup -y
+          echo "C:\Program Files (x86)\Inno Setup 6" >> $env:GITHUB_PATH
+
+      - name: Download and prepare Python embeddable
+        shell: pwsh
+        run: |
+          $pythonDir = "electron\dist-installer\inno-build\python"
+          New-Item -ItemType Directory -Force -Path $pythonDir | Out-Null
+
+          # Download Python embeddable
+          $pyUrl = "https://www.python.org/ftp/python/3.12.6/python-3.12.6-embed-amd64.zip"
+          $zip = "$env:TEMP\python-embed.zip"
+          Invoke-WebRequest -Uri $pyUrl -OutFile $zip -UseBasicParsing
+          Expand-Archive -Path $zip -DestinationPath $pythonDir -Force
+
+          # Enable pip (uncomment import site)
+          $pth = Join-Path $pythonDir "python312._pth"
+          $content = Get-Content $pth -Raw
+          $content = $content -replace '#import site', 'import site'
+          Set-Content $pth -Value $content
+
+          # Install pip
+          $pipUrl = "https://bootstrap.pypa.io/get-pip.py"
+          $getpip = "$env:TEMP\get-pip.py"
+          Invoke-WebRequest -Uri $pipUrl -OutFile $getpip -UseBasicParsing
+          & "$pythonDir\python.exe" $getpip
+
+          # Install dependencies
+          $reqs = "requirements.txt"
+          & "$pythonDir\python.exe" -m pip install --no-warn-script-location -r $reqs
+          Write-Host "Python prepared successfully"
+
+      - name: Copy agent code
+        shell: pwsh
+        run: |
+          $dest = "electron\dist-installer\inno-build\agent"
+          New-Item -ItemType Directory -Force -Path $dest | Out-Null
+
+          # Copy nexino_agent package
+          Copy-Item -Path "nexino_agent" -Destination "$dest\nexino_agent" -Recurse -Force
+
+          # Copy requirements.txt
+          Copy-Item -Path "requirements.txt" -Destination "$dest\requirements.txt" -Force
+
+          # Copy .env (station config)
+          Copy-Item -Path ".env" -Destination "electron\dist-installer\inno-build\.env" -Force
+
+          Write-Host "Agent code copied"
+
+      - name: Copy Electron dist
         working-directory: electron
-        run: npm run build:win
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run build
+
+      - name: Build Inno Setup installer
+        shell: pwsh
+        run: |
+          # Update installer.iss version
+          $ver = "${{ steps.tag.outputs.version }}"
+          $iss = Get-Content "installer.iss" -Raw
+          $iss = $iss -replace '#define MyAppVersion ".*"', "#define MyAppVersion ""$ver"""
+          Set-Content "installer.iss" -Value $iss
+
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "installer.iss"
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Inno Setup build failed"
+            exit 1
+          }
+          Write-Host "Inno Setup build completed"
+
+      - name: Create latest.yml for auto-update
+        shell: pwsh
+        run: |
+          $ver = "${{ steps.tag.outputs.version }}"
+          $exe = "electron\dist-installer\NexinoPrintAgent-$ver-Setup.exe"
+          $bytes = (Get-Item $exe).Length
+          $hash = (Get-FileHash -Path $exe -Algorithm SHA256).Hash.ToLower()
+
+          $yml = @"
+          version: $ver
+          files:
+          - url: NexinoPrintAgent-$ver-Setup.exe
+            sha256: $hash
+            size: $bytes
+          path: NexinoPrintAgent-$ver-Setup.exe
+          sha512: $hash
+          releaseDate: '$(Get-Date -Format "yyyy-MM-ddTHH:mm:ss.fffZ")'
+          "@
+
+          Set-Content -Path "electron\dist-installer\latest.yml" -Value $yml
+          Write-Host "Created latest.yml"
+          Get-Content "electron\dist-installer\latest.yml"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -93,20 +181,21 @@ jobs:
             ## Nexino Print Agent ${{ steps.tag.outputs.tag }}
 
             ### What's New
+            - Self-contained installer with bundled Python (no manual Python install needed)
             - Pre-flight hardware check (printer status verified before payment)
             - Network resilience (idempotency keys, crash recovery)
             - Download integrity verification (SHA-256)
             - Auto-update support
 
             ### Installation
-            1. Download `Nexino-Print-Agent-Setup-${{ steps.tag.outputs.version }}.exe`
+            1. Download `NexinoPrintAgent-${{ steps.tag.outputs.version }}-Setup.exe`
             2. Run the installer
             3. The app will auto-detect future updates
 
             ### Auto-Update
             Existing users will be notified of this update automatically in the app.
           files: |
-            electron/dist-installer/Nexino-Print-Agent-Setup-${{ steps.tag.outputs.version }}.exe
+            electron/dist-installer/NexinoPrintAgent-${{ steps.tag.outputs.version }}-Setup.exe
             electron/dist-installer/latest.yml
           draft: false
           prerelease: false
