@@ -1,8 +1,9 @@
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
-const { spawn } = require('child_process');
+const { spawn, execSync } = require('child_process');
 const { autoUpdater } = require('electron-updater');
 const Store = require('electron-store');
+const fs = require('fs');
 
 const isProd = app.isPackaged;
 const agentRoot = isProd
@@ -32,6 +33,52 @@ const store = new Store({
 let mainWindow;
 let agentProcess = null;
 
+// ==================== DEPENDENCY CHECK ====================
+
+function checkPython() {
+  try {
+    execSync('python --version', { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function installDependencies(mainWindow) {
+  return new Promise((resolve, reject) => {
+    const reqFile = path.join(agentRoot, 'requirements.txt');
+    if (!fs.existsSync(reqFile)) {
+      resolve({ success: true, message: 'No requirements.txt found' });
+      return;
+    }
+
+    if (mainWindow) {
+      mainWindow.webContents.send('agent-log', '[Setup] Installing Python dependencies...\n');
+    }
+
+    const pip = spawn('python', ['-m', 'pip', 'install', '-r', reqFile, '--quiet'], {
+      cwd: agentRoot,
+      shell: true,
+      env: { ...process.env, PYTHONPATH: agentRoot }
+    });
+
+    let output = '';
+    pip.stdout.on('data', (d) => { output += d.toString(); });
+    pip.stderr.on('data', (d) => { output += d.toString(); });
+
+    pip.on('close', (code) => {
+      if (code === 0) {
+        if (mainWindow) {
+          mainWindow.webContents.send('agent-log', '[Setup] Dependencies installed successfully.\n');
+        }
+        resolve({ success: true });
+      } else {
+        reject(new Error(`pip install failed (exit ${code}): ${output}`));
+      }
+    });
+  });
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 900,
@@ -49,6 +96,31 @@ function createWindow() {
   });
 
   mainWindow.loadFile('index.html');
+
+  // Check Python and install dependencies on first run
+  mainWindow.webContents.on('did-finish-load', async () => {
+    if (!checkPython()) {
+      mainWindow.webContents.send('agent-log', '[Error] Python is not installed or not in PATH.\n');
+      mainWindow.webContents.send('agent-log', '[Error] Please install Python 3.10+ from https://python.org\n');
+      dialog.showMessageBox(mainWindow, {
+        type: 'error',
+        title: 'Python Not Found',
+        message: 'Python 3.10+ is required but not installed.',
+        detail: 'Please install Python from https://python.org and make sure "Add Python to PATH" is checked during installation.',
+        buttons: ['Open Python Website', 'Exit'],
+      }).then(({ response }) => {
+        if (response === 0) shell.openExternal('https://www.python.org/downloads/');
+        app.quit();
+      });
+      return;
+    }
+
+    try {
+      await installDependencies(mainWindow);
+    } catch (err) {
+      mainWindow.webContents.send('agent-log', `[Error] Failed to install dependencies: ${err.message}\n`);
+    }
+  });
 
   mainWindow.on('closed', () => {
     mainWindow = null;
@@ -163,6 +235,19 @@ function sendUpdateStatus(status, data = {}) {
 }
 
 // ==================== IPC HANDLERS ====================
+
+ipcMain.handle('check-dependencies', async () => {
+  const pythonOk = checkPython();
+  if (!pythonOk) {
+    return { success: false, error: 'Python is not installed or not in PATH' };
+  }
+  try {
+    await installDependencies(mainWindow);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
 
 ipcMain.handle('get-config', () => {
   return store.store;
