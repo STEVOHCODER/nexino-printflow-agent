@@ -12,6 +12,7 @@ build/
 *.bin
 *.dat
 *.log
+*.pfx
 downloads/
 output/
 electron/node_modules/

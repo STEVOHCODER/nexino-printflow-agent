@@ -149,6 +149,34 @@ jobs:
           }
           Write-Host "Inno Setup build completed"
 
+      - name: Sign installer with self-signed certificate
+        shell: pwsh
+        run: |
+          $ver = "${{ steps.tag.outputs.version }}"
+          $exe = "electron\dist-installer\NexinoPrintAgent-$ver-Setup.exe"
+
+          # Create self-signed code signing certificate
+          $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject 'CN=Nexino PrintFlow' -CertStoreLocation 'Cert:\CurrentUser\My' -NotAfter (Get-Date).AddYears(5) -HashAlgorithm SHA256
+          Write-Host "Certificate created: $($cert.Thumbprint)"
+
+          # Add to trusted stores
+          $rootStore = New-Object System.Security.Cryptography.X509Certificates.X509Store('Root', 'CurrentUser')
+          $rootStore.Open('ReadWrite')
+          $rootStore.Add($cert)
+          $rootStore.Close()
+
+          $pubStore = New-Object System.Security.Cryptography.X509Certificates.X509Store('TrustedPublisher', 'CurrentUser')
+          $pubStore.Open('ReadWrite')
+          $pubStore.Add($cert)
+          $pubStore.Close()
+
+          # Sign the exe
+          $result = Set-AuthenticodeSignature -FilePath $exe -Certificate $cert -TimestampServer 'http://timestamp.digicert.com'
+          Write-Host "Signature status: $($result.Status)"
+          if ($result.Status -ne 'Valid') {
+            Write-Warning "Signing failed: $($result.StatusMessage)"
+          }
+
       - name: Create latest.yml for auto-update
         shell: pwsh
         run: |

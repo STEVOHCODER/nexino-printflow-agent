@@ -92,9 +92,26 @@ if errorlevel 1 (
     exit /b 1
 )
 
+REM Step 7: Sign the installer
+echo.
+echo [7/7] Signing installer...
+set "PFX_FILE=%ROOT%nexino-signing.pfx"
+set "EXE_FILE=%DIST_DIR%\NexinoPrintAgent-%VERSION%-Setup.exe"
+
+if exist "%PFX_FILE%" (
+    echo Signing with nexino-signing.pfx...
+    powershell -ExecutionPolicy Bypass -Command "$cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2('%PFX_FILE%', 'NexinoPrint2026', [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::Exportable); $result = Set-AuthenticodeSignature -FilePath '%EXE_FILE%' -Certificate $cert -TimestampServer 'http://timestamp.digicert.com'; Write-Host 'Signature:' $result.Status"
+    if errorlevel 1 (
+        echo WARNING: Signing failed, but installer was built successfully
+    )
+) else (
+    echo WARNING: nexino-signing.pfx not found, skipping signing
+    echo To sign, place nexino-signing.pfx in the print-agent directory
+)
+
 echo.
 echo ============================================
 echo  Build complete!
-echo  Installer: %DIST_DIR%\NexinoPrintAgent-%VERSION%-Setup.exe
+echo  Installer: %EXE_FILE%
 echo ============================================
 pause
