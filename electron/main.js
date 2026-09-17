@@ -6,16 +6,14 @@ const Store = require('electron-store');
 const fs = require('fs');
 
 const isProd = app.isPackaged;
-const appDir = isProd
-  ? path.join(process.resourcesPath, '..', '..')
-  : path.join(__dirname, '..');
-const agentRoot = isProd
-  ? path.join(process.resourcesPath)
+// In Inno Setup install: {app}\app\resources -> go up to {app}
+const installRoot = isProd
+  ? path.resolve(process.resourcesPath, '..')  // from resources/ to app/ to install root
   : path.join(__dirname, '..');
 
 // Bundled Python path (Inno Setup installs it next to the app)
-const bundledPython = path.join(appDir, 'python', 'python.exe');
-const bundledAgent = path.join(appDir, 'agent');
+const bundledPython = path.join(installRoot, 'python', 'python.exe');
+const bundledAgent = path.join(installRoot, 'agent');
 
 function getPythonPath() {
   // Use bundled Python if it exists (Inno Setup install)
@@ -67,6 +65,7 @@ function checkPython() {
 
 function installDependencies(mainWindow) {
   return new Promise((resolve, reject) => {
+    const agentRoot = getAgentRoot();
     const reqFile = path.join(agentRoot, 'requirements.txt');
     if (!fs.existsSync(reqFile)) {
       resolve({ success: true, message: 'No requirements.txt found' });
@@ -80,7 +79,7 @@ function installDependencies(mainWindow) {
     const pip = spawn(getPythonPath(), ['-m', 'pip', 'install', '-r', reqFile, '--quiet'], {
       cwd: getAgentRoot(),
       shell: true,
-      env: { ...process.env, PYTHONPATH: agentRoot }
+      env: { ...process.env, PYTHONPATH: getAgentRoot() }
     });
 
     let output = '';
