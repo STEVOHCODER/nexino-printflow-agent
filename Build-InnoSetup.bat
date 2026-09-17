@@ -100,7 +100,7 @@ set "EXE_FILE=%DIST_DIR%\NexinoPrintAgent-%VERSION%-Setup.exe"
 
 if exist "%PFX_FILE%" (
     echo Signing with nexino-signing.pfx...
-    powershell -ExecutionPolicy Bypass -Command "$cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2('%PFX_FILE%', 'NexinoPrint2026', [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::Exportable); $result = Set-AuthenticodeSignature -FilePath '%EXE_FILE%' -Certificate $cert -TimestampServer 'http://timestamp.digicert.com'; Write-Host 'Signature:' $result.Status"
+    powershell -ExecutionPolicy Bypass -File "%ROOT%sign-exe.ps1" "%EXE_FILE%" "%PFX_FILE%"
     if errorlevel 1 (
         echo WARNING: Signing failed, but installer was built successfully
     )
