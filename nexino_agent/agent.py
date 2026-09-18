@@ -391,9 +391,9 @@ class NexinoAgent:
             printer_name, str(file_path), options
         )
 
-        # POST-PRINT VERIFICATION: Wait briefly then verify printer accepted the job
-        time.sleep(1.0)
-        self.monitor.check_status()
+        # Verify the job actually reached the printer hardware before completing.
+        # A failure here raises, so the retry/failure path can mark PRINT_FAILED.
+        self._verify_job_output(job.job_id, printer_job_id, printer_name)
 
         self.api_client.update_job_status(job.job_id, JobStatus.COMPLETED)
 
@@ -411,6 +411,41 @@ class NexinoAgent:
             file_path.unlink(missing_ok=True)
         except OSError:
             pass
+
+    def _verify_job_output(self, job_id: str, printer_job_id: str, printer_name: str) -> None:
+        """Confirm the printer accepted the job before marking it complete.
+
+        Polls the adapter's job status for up to print_verify_timeout_seconds.
+        If the printer reports an error, raise so the job is marked PRINT_FAILED
+        and can be retried instead of falsely reporting success.
+        A verification timeout is treated as accepted (submission succeeded).
+        """
+        deadline = time.time() + self.config.print_verify_timeout_seconds
+        last_status = "unknown"
+        while time.time() < deadline:
+            try:
+                info = self.adapter.get_job_status(printer_job_id)
+            except Exception as e:
+                logger.debug(f"Job status check failed: {e}")
+                return  # Adapter cannot verify; do not block completion
+            status = str(info.get("status", "unknown")).lower()
+            last_status = status
+            if status in ("error", "failed", "aborted", "print_failed"):
+                message = (
+                    info.get("message") or info.get("error_message")
+                    or "printer reported a failure"
+                )
+                raise RuntimeError(
+                    f"Job {job_id} failed at printer '{printer_name}': {message}"
+                )
+            if status in ("completed", "cancelled", "submitted"):
+                return
+            time.sleep(1.0)
+
+        logger.info(
+            f"Job {job_id} verification timed out (status={last_status}); "
+            "accepting as submitted."
+        )
 
     def _monitor_loop(self) -> None:
         while self._running:
@@ -441,9 +476,13 @@ class NexinoAgent:
         for printer_name, printer_uuid in self._printer_ids.items():
             try:
                 status = self.adapter.get_status(printer_name)
+                # The backend schema only accepts IDLE/PRINTING/PAUSED/ERROR/OFFLINE
+                state_value = status.state.value if status.state else "OFFLINE"
+                if state_value == "UNKNOWN":
+                    state_value = "OFFLINE"
                 heartbeats.append({
                     "printerId": printer_uuid,
-                    "status": status.state.value if status.state else "OFFLINE",
+                    "status": state_value,
                     "paperStatus": status.paper_status.value if status.paper_status else "UNKNOWN",
                     "paperLevel": status.paper_level if status.paper_level is not None else None,
                     "tonerStatus": status.toner_status.value if status.toner_status else "UNKNOWN",

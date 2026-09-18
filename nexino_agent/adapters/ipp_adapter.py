@@ -2,7 +2,7 @@
 
 This adapter communicates with printers using the IPP protocol directly
 via HTTP requests, without requiring CUPS or other printing systems.
-Supports mDNS discovery and manual printer URI configuration.
+Supports manual printer URI configuration and subnet discovery.
 """
 
 import struct
@@ -10,7 +10,6 @@ import logging
 import uuid
 import time
 import socket
-import threading
 from typing import Dict, List, Optional
 from pathlib import Path
 
@@ -51,9 +50,8 @@ IPP_TAG_resolution = 0x32
 IPP_TAG_range = 0x33
 IPP_TAG_octetstring = 0x40
 IPP_TAG_text = 0x71
-IPP_TAG_nameWithLanguage = 0x61
 
-KNOWN_IPP_PORTS = [631, 80, 443, 9100]
+KNOWN_IPP_PORTS = [631, 9100]
 
 
 class IPPAdapter(PrinterAdapter):
@@ -61,10 +59,13 @@ class IPPAdapter(PrinterAdapter):
 
     def __init__(self, known_uris: Optional[List[str]] = None) -> None:
         self._jobs: Dict[str, Dict] = {}
-        self._printers: Dict[str, Dict] = {}
+        self._printers: Dict[str, str] = {}  # printer name -> IPP URI
         self._known_uris = known_uris or []
         logger.info("IPP adapter initialized.")
 
+    # ------------------------------------------------------------------
+    # Protocol encoding
+    # ------------------------------------------------------------------
     def _encode_ipp_attribute(self, name: str, value, tag: int = IPP_TAG_keyword) -> bytes:
         name_bytes = name.encode("utf-8")
         result = struct.pack("!BH", tag, len(name_bytes)) + name_bytes
@@ -166,19 +167,37 @@ class IPPAdapter(PrinterAdapter):
 
         return result
 
+    # ------------------------------------------------------------------
+    # Transport
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _normalize_uri(printer_uri: str) -> str:
+        """Ensure a URI is a full http(s) IPP endpoint."""
+        uri = printer_uri.strip()
+        if not uri.startswith("http"):
+            uri = f"http://{uri}"
+        if "/ipp" not in uri:
+            uri = f"{uri.rstrip('/')}/ipp/print"
+        return uri
+
+    def _op_attributes(self, printer_uri: str, user: str = "nexino-agent") -> Dict:
+        """Required operation attributes, charset/natural-language first.
+
+        IPP requires attributes-charset and attributes-natural-language as the
+        first operation attributes; insertion order guarantees that.
+        """
+        return {
+            "attributes-charset": "utf-8",
+            "attributes-natural-language": "en",
+            "printer-uri": self._normalize_uri(printer_uri),
+            "requesting-user-name": user,
+        }
+
     def _send_ipp_request(
         self, printer_uri: str, operation_id: int, attributes: Dict,
         document_data: Optional[bytes] = None
     ) -> Optional[Dict]:
-        if not printer_uri.startswith("http"):
-            printer_uri = f"http://{printer_uri}"
-
-        if "/ipp" not in printer_uri:
-            if printer_uri.endswith("/"):
-                printer_uri += "ipp/print"
-            else:
-                printer_uri += "/ipp/print"
-
+        endpoint = self._normalize_uri(printer_uri)
         request_data = self._encode_ipp_request(operation_id, attributes)
 
         if document_data:
@@ -190,7 +209,7 @@ class IPPAdapter(PrinterAdapter):
 
         try:
             response = requests.post(
-                printer_uri,
+                endpoint,
                 data=request_data,
                 headers=headers,
                 timeout=30,
@@ -205,19 +224,40 @@ class IPPAdapter(PrinterAdapter):
             logger.error(f"IPP communication error: {e}")
             return None
 
+    def _resolve_uri(self, printer_name: str) -> str:
+        """Resolve a printer name (or URI) to an IPP endpoint URI.
+
+        The backend stores the printer's URI when the agent auto-registers,
+        but callers may pass either the friendly name or the raw URI.
+        """
+        if printer_name in self._printers:
+            return self._printers[printer_name]
+        # Otherwise assume the caller already passed a URI / host[:port].
+        return printer_name
+
+    # ------------------------------------------------------------------
+    # Discovery
+    # ------------------------------------------------------------------
+    def _probe_ipp_printer(self, uri: str) -> Optional[Dict]:
+        attributes = self._op_attributes(uri, "nexino-discovery")
+        response = self._send_ipp_request(uri, IPP_OP_GET_PRINTER_ATTRIBUTES, attributes)
+        if response and response.get("status_code", 1) == 0:
+            return response.get("attributes", {})
+        return None
+
     def _discover_network_printers(self) -> List[Dict]:
-        """Try common printer ports on the local network."""
+        """Probe common IPP ports across the local subnet."""
         discovered = []
         try:
             hostname = socket.gethostname()
             local_ip = socket.gethostbyname(hostname)
-            subnet = '.'.join(local_ip.split('.')[:-1])
+            subnet = ".".join(local_ip.split(".")[:-1])
         except Exception:
             subnet = "192.168.1"
 
         for last_octet in range(1, 255):
             ip = f"{subnet}.{last_octet}"
-            for port in [631, 9100]:
+            for port in KNOWN_IPP_PORTS:
                 try:
                     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                     sock.settimeout(0.1)
@@ -227,28 +267,20 @@ class IPPAdapter(PrinterAdapter):
                         uri = f"http://{ip}:{port}/ipp/print"
                         attrs = self._probe_ipp_printer(uri)
                         if attrs:
+                            name = attrs.get("printer-name", f"Printer@{ip}")
+                            endpoint = self._normalize_uri(uri)
+                            self._printers[name] = endpoint
                             discovered.append({
-                                "name": attrs.get("printer-name", f"Printer@{ip}"),
-                                "uri": uri,
+                                "name": name,
+                                "port": endpoint,
+                                "uri": endpoint,
                                 "type": "ipp",
-                                "driver": "IPP Generic",
+                                "driver": attrs.get("printer-make-and-model", "IPP Generic"),
                             })
                 except Exception:
                     pass
 
         return discovered
-
-    def _probe_ipp_printer(self, uri: str) -> Optional[Dict]:
-        attributes = {
-            "printer-uri": uri,
-            "requesting-user-name": "nexino-discovery",
-            "attributes-charset": "utf-8",
-            "attributes-natural-language": "en",
-        }
-        response = self._send_ipp_request(uri, IPP_OP_GET_PRINTER_ATTRIBUTES, attributes)
-        if response and response.get("status_code", 1) == 0:
-            return response.get("attributes", {})
-        return None
 
     def discover(self) -> List[Dict]:
         discovered = []
@@ -256,17 +288,20 @@ class IPPAdapter(PrinterAdapter):
         for uri in self._known_uris:
             attrs = self._probe_ipp_printer(uri)
             if attrs:
+                name = attrs.get("printer-name", "IPP Printer")
+                endpoint = self._normalize_uri(uri)
+                self._printers[name] = endpoint
                 discovered.append({
-                    "name": attrs.get("printer-name", "IPP Printer"),
-                    "uri": uri,
+                    "name": name,
+                    "port": endpoint,
+                    "uri": endpoint,
                     "type": "ipp",
                     "driver": attrs.get("printer-make-and-model", "IPP Generic"),
                 })
 
         if not discovered:
             logger.info("Scanning network for IPP printers (this may take a moment)...")
-            network_printers = self._discover_network_printers()
-            discovered.extend(network_printers)
+            discovered.extend(self._discover_network_printers())
 
         if discovered:
             logger.info(f"Discovered {len(discovered)} IPP printer(s).")
@@ -275,14 +310,14 @@ class IPPAdapter(PrinterAdapter):
 
         return discovered
 
+    # ------------------------------------------------------------------
+    # Status
+    # ------------------------------------------------------------------
     def get_status(self, printer_name: str) -> PrinterStatus:
-        attributes = {
-            "printer-uri": printer_name,
-            "requesting-user-name": "nexino-agent",
-        }
+        uri = self._resolve_uri(printer_name)
 
         response = self._send_ipp_request(
-            printer_name, IPP_OP_GET_PRINTER_ATTRIBUTES, attributes
+            uri, IPP_OP_GET_PRINTER_ATTRIBUTES, self._op_attributes(uri)
         )
 
         if not response:
@@ -309,8 +344,8 @@ class IPPAdapter(PrinterAdapter):
 
         error_message = None
         state_msg = attrs.get("printer-state-message", "")
-        if state_msg and "error" in state_msg.lower():
-            error_message = state_msg
+        if state_msg and "error" in str(state_msg).lower():
+            error_message = str(state_msg)
             state = PrinterState.ERROR
 
         return PrinterStatus(
@@ -323,6 +358,9 @@ class IPPAdapter(PrinterAdapter):
             error_message=error_message,
         )
 
+    # ------------------------------------------------------------------
+    # Printing
+    # ------------------------------------------------------------------
     def submit_job(
         self, printer_name: str, file_path: str, options: Optional[Dict] = None,
     ) -> str:
@@ -332,6 +370,8 @@ class IPPAdapter(PrinterAdapter):
         file_path_obj = Path(file_path)
         if not file_path_obj.exists():
             raise RuntimeError(f"File not found: {file_path}")
+
+        uri = self._resolve_uri(printer_name)
 
         file_content = file_path_obj.read_bytes()
 
@@ -347,27 +387,25 @@ class IPPAdapter(PrinterAdapter):
         }
         doc_format = format_map.get(ext, "application/octet-stream")
 
-        attributes = {
-            "printer-uri": printer_name,
-            "requesting-user-name": "nexino-agent",
-            "document-format": doc_format,
-            "job-name": file_path_obj.name,
-        }
+        attributes = self._op_attributes(uri)
+        attributes["document-format"] = doc_format
+        attributes["job-name"] = file_path_obj.name
 
-        copies = options.get("copies", 1)
+        copies = int(options.get("copies", 1) or 1)
         if copies > 1:
-            attributes["copies"] = str(copies)
+            # IPP 'copies' is an integer attribute — must not be sent as a string.
+            attributes["copies"] = copies
 
         color_mode = options.get("color_mode", "")
-        if color_mode in ("bw", "monochrome", "MONOCHROME", "BW"):
+        if isinstance(color_mode, str) and color_mode.upper() in ("BW", "MONOCHROME"):
             attributes["print-color-mode"] = "monochrome"
-        elif color_mode in ("color", "COLOR", "MIXED"):
+        elif isinstance(color_mode, str) and color_mode.upper() in ("COLOR", "MIXED"):
             attributes["print-color-mode"] = "color"
 
         duplex = options.get("duplex", "")
-        if duplex in ("double", "duplex", "true", True):
+        if duplex in ("double", "duplex", "true", True, "DOUBLE"):
             attributes["sides"] = "two-sided-long-edge"
-        elif duplex in ("single", "simplex", "false", False):
+        elif duplex in ("single", "simplex", "false", False, "SINGLE"):
             attributes["sides"] = "one-sided"
 
         paper_size = options.get("paper_size", "A4")
@@ -378,20 +416,20 @@ class IPPAdapter(PrinterAdapter):
                 "A5": "iso_a5_148x210mm",
                 "LETTER": "na_letter_8.5x11in",
             }
-            attributes["media"] = media_map.get(paper_size.upper(), paper_size.lower())
+            attributes["media"] = media_map.get(str(paper_size).upper(), str(paper_size).lower())
 
         page_range = options.get("page_range", "")
-        if page_range and page_range != "all":
-            attributes["page-ranges"] = page_range
+        if page_range and str(page_range).strip().lower() not in ("", "all"):
+            attributes["page-ranges"] = str(page_range)
 
-        # Send Print-Job request WITH file content appended to IPP header
+        # Send Print-Job request WITH file content appended to the IPP message
         response = self._send_ipp_request(
-            printer_name, IPP_OP_PRINT_JOB, attributes,
+            uri, IPP_OP_PRINT_JOB, attributes,
             document_data=file_content
         )
 
         if not response:
-            raise RuntimeError(f"IPP Print-Job failed for {printer_name}")
+            raise RuntimeError(f"IPP Print-Job failed for {uri}")
 
         status_code = response.get("status_code", 0)
         if status_code != 0:
@@ -407,6 +445,7 @@ class IPPAdapter(PrinterAdapter):
             "ipp_job_id": ipp_job_id,
             "status": "submitted",
             "printer": printer_name,
+            "uri": uri,
             "file": str(file_path),
             "submitted_at": time.time(),
         }
@@ -419,20 +458,17 @@ class IPPAdapter(PrinterAdapter):
             return False
 
         job = self._jobs[job_id]
-        printer_name = job.get("printer", "")
+        uri = job.get("uri") or self._resolve_uri(job.get("printer", ""))
         ipp_job_id = job.get("ipp_job_id")
 
         if ipp_job_id is None:
             return False
 
-        attributes = {
-            "printer-uri": printer_name,
-            "requesting-user-name": "nexino-agent",
-            "job-id": ipp_job_id,
-        }
+        attributes = self._op_attributes(uri)
+        attributes["job-id"] = int(ipp_job_id)
 
         response = self._send_ipp_request(
-            printer_name, IPP_OP_CANCEL_JOB, attributes
+            uri, IPP_OP_CANCEL_JOB, attributes
         )
 
         if response and response.get("status_code", 1) == 0:
@@ -447,20 +483,17 @@ class IPPAdapter(PrinterAdapter):
             return {"id": job_id, "status": "unknown", "message": "Job not found"}
 
         job = self._jobs[job_id]
-        printer_name = job.get("printer", "")
+        uri = job.get("uri") or self._resolve_uri(job.get("printer", ""))
         ipp_job_id = job.get("ipp_job_id")
 
         if ipp_job_id is None:
             return job
 
-        attributes = {
-            "printer-uri": printer_name,
-            "requesting-user-name": "nexino-agent",
-            "job-id": ipp_job_id,
-        }
+        attributes = self._op_attributes(uri)
+        attributes["job-id"] = int(ipp_job_id)
 
         response = self._send_ipp_request(
-            printer_name, IPP_OP_GET_JOB_ATTRIBUTES, attributes
+            uri, IPP_OP_GET_JOB_ATTRIBUTES, attributes
         )
 
         if response:
@@ -468,20 +501,17 @@ class IPPAdapter(PrinterAdapter):
             ipp_job_state = attrs.get("job-state", 9)
             state_map = {
                 3: "pending", 4: "pending_held", 5: "processing",
-                6: "processing_stopped", 7: "canceled", 8: "aborted", 9: "completed",
+                6: "processing_stopped", 7: "cancelled", 8: "aborted", 9: "completed",
             }
             return {**job, "status": state_map.get(ipp_job_state, "unknown")}
 
         return job
 
     def get_capabilities(self, printer_name: str) -> Dict:
-        attributes = {
-            "printer-uri": printer_name,
-            "requesting-user-name": "nexino-agent",
-        }
+        uri = self._resolve_uri(printer_name)
 
         response = self._send_ipp_request(
-            printer_name, IPP_OP_GET_PRINTER_ATTRIBUTES, attributes
+            uri, IPP_OP_GET_PRINTER_ATTRIBUTES, self._op_attributes(uri)
         )
 
         capabilities = {

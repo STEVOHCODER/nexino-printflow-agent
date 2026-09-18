@@ -5,3 +5,4 @@ watchdog>=3.0.0
 psutil>=5.9.0
 pywin32>=306;platform_system=="Windows"
 Pillow>=10.0.0
+pypdfium2>=4.27.0

@@ -37,6 +37,7 @@ class AgentConfig:
     retry_max_delay: float = 60.0
     download_timeout: int = 30
     api_timeout: int = 10
+    print_verify_timeout_seconds: int = 20
 
     @classmethod
     def load(cls, env_file: Optional[str] = None) -> "AgentConfig":
@@ -73,6 +74,7 @@ class AgentConfig:
             retry_max_delay=float(os.getenv("RETRY_MAX_DELAY", cls.retry_max_delay)),
             download_timeout=int(os.getenv("DOWNLOAD_TIMEOUT", cls.download_timeout)),
             api_timeout=int(os.getenv("API_TIMEOUT", cls.api_timeout)),
+            print_verify_timeout_seconds=int(os.getenv("PRINT_VERIFY_TIMEOUT_SECONDS", cls.print_verify_timeout_seconds)),
         )
 
         config._setup_logging()

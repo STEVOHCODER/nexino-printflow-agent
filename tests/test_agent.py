@@ -146,9 +146,8 @@ class TestProcessJob:
             station_id="STATION-001",
         )
 
-        agent.process_job(job)
-
-        assert agent._jobs_failed == 1
+        with pytest.raises(ValueError, match='authorization token'):
+            agent.process_job(job)
 
     @patch("nexino_agent.agent.NexinoAPIClient.update_job_status")
     @patch("nexino_agent.agent.NexinoAPIClient.download_file")
@@ -167,7 +166,8 @@ class TestProcessJob:
             authorization_token="auth-token-123",
         )
 
-        agent.process_job(job)
+        # Failures are counted by the retry wrapper, not process_job()
+        agent._process_job_with_retry(job)
 
         assert agent._jobs_failed == 1
 

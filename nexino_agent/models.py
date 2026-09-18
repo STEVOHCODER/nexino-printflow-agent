@@ -25,6 +25,9 @@ class TonerStatus(Enum):
 class PrinterState(Enum):
     """Printer state — must match backend PrinterState enum."""
     IDLE = "IDLE"
+    # UNKNOWN is agent-side only; it is mapped to OFFLINE before being
+    # sent to the backend, whose schema accepts only the 5 states above.
+    UNKNOWN = "UNKNOWN"
     PRINTING = "PRINTING"
     PAUSED = "PAUSED"
     ERROR = "ERROR"

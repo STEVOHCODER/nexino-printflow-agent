@@ -25,6 +25,7 @@ setup(
         "watchdog>=3.0.0",
         "psutil>=5.9.0",
         "Pillow>=10.0.0",
+        "pypdfium2>=4.27.0",
     ],
     extras_require={
         "windows": [
