@@ -15,6 +15,12 @@ const installRoot = isProd
 const bundledPython = path.join(installRoot, 'python', 'python.exe');
 const bundledAgent = path.join(installRoot, 'agent');
 
+// Fallback agent location, used when not installed via Inno Setup
+// (dev mode, or an electron-builder package that ships resources/nexino_agent).
+const agentRoot = isProd
+  ? path.join(process.resourcesPath, 'nexino_agent')
+  : path.join(__dirname, '..', 'nexino_agent');
+
 function getPythonPath() {
   // Use bundled Python if it exists (Inno Setup install)
   if (fs.existsSync(bundledPython)) return bundledPython;
@@ -66,8 +72,14 @@ function checkPython() {
 function installDependencies(mainWindow) {
   return new Promise((resolve, reject) => {
     const agentRoot = getAgentRoot();
-    const reqFile = path.join(agentRoot, 'requirements.txt');
-    if (!fs.existsSync(reqFile)) {
+    // requirements.txt may sit inside the agent dir or one level up
+    // (the Inno Setup layout stores it next to the agent dir).
+    const reqCandidates = [
+      path.join(agentRoot, 'requirements.txt'),
+      path.join(path.dirname(agentRoot), 'requirements.txt'),
+    ];
+    const reqFile = reqCandidates.find((p) => fs.existsSync(p));
+    if (!reqFile) {
       resolve({ success: true, message: 'No requirements.txt found' });
       return;
     }
