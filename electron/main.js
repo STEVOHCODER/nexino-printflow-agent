@@ -6,9 +6,10 @@ const Store = require('electron-store');
 const fs = require('fs');
 
 const isProd = app.isPackaged;
-// In Inno Setup install: {app}\app\resources -> go up to {app}
+// In Inno Setup install: exe+resources live at {app}\app\resources.
+// Install root {app} is two levels up: resources -> app -> {app}.
 const installRoot = isProd
-  ? path.resolve(process.resourcesPath, '..')  // from resources/ to app/ to install root
+  ? path.resolve(process.resourcesPath, '..', '..')
   : path.join(__dirname, '..');
 
 // Bundled Python path (Inno Setup installs it next to the app)
